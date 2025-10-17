@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Calendar, Users, Crown, ChevronRight } from 'lucide-react';
+import { Plus, Calendar, Users, ChevronRight } from 'lucide-react';
 
 export default function EventsPage() {
   const router = useRouter();
@@ -98,7 +98,7 @@ export default function EventsPage() {
               Create your first event to get started
             </p>
             <button
-              onClick={() => router.push('/events/new')}
+              onClick={() => router.push('/create-event')}
               style={{
                 background: colors.gold,
                 border: 'none',
@@ -119,14 +119,15 @@ export default function EventsPage() {
           </div>
         ) : (
           <>
-            {events.map(event => {
-              const totalGuests = event._count?.guests || 0;
-              const claimedGuests = event.guests?.filter(g => g.claimed).length || 0;
+            {events.map((event: any) => {
+              // Safely calculate guest counts
+              const totalGuests = event.guests?.length || 0;
+              const claimedGuests = event.guests?.filter((g: any) => g.claimed).length || 0;
               
               return (
                 <div
                   key={event.id}
-                  onClick={() => router.push(`/events/${event.id}`)}
+                  onClick={() => router.push(`/event/${event.id}`)}
                   style={{
                     background: colors.cardBg,
                     border: `1px solid ${colors.border}`,
@@ -236,7 +237,7 @@ export default function EventsPage() {
       {/* Floating Action Button */}
       {events.length > 0 && (
         <button
-          onClick={() => router.push('/events/new')}
+          onClick={() => router.push('/create-event')}
           style={{
             position: 'fixed',
             bottom: '24px',
