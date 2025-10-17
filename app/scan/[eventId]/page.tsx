@@ -82,31 +82,44 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
       })
   }
 
-  const startCamera = async () => {
-    setError('')
-    setResult(null)
-    
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      })
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        streamRef.current = stream
-        
-        // Wait for video to load, then play
-        await videoRef.current.play()
-        
-        setScanning(true)
-        scanningRef.current = true
-        requestAnimationFrame(tick)
+const startCamera = async () => {
+  setError('')
+  setResult(null)
+  
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { 
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       }
-    } catch (err) {
-      console.error('Error accessing camera:', err)
-      setError('Unable to access camera. Please check permissions.')
+    })
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream
+      streamRef.current = stream
+      
+      // Explicitly play the video
+      videoRef.current.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current.play()
+            .then(() => {
+              setScanning(true)
+              scanningRef.current = true
+              requestAnimationFrame(tick)
+            })
+            .catch(err => {
+              console.error('Error playing video:', err)
+              setError('Unable to start camera preview')
+            })
+        }
+      }
     }
+  } catch (err) {
+    console.error('Error accessing camera:', err)
+    setError('Unable to access camera. Please check permissions.')
   }
+}
 
   const stopCamera = () => {
     if (streamRef.current) {
