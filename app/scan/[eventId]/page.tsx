@@ -87,37 +87,48 @@ const startCamera = async () => {
   setResult(null)
   
   try {
+    // Stop any existing streams first
+    stopCamera()
+    
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { 
-        facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        facingMode: 'environment'
       }
     })
     
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream
-      streamRef.current = stream
-      
-      // Explicitly play the video
-      videoRef.current.onloadedmetadata = () => {
-        if (videoRef.current) {
-          videoRef.current.play()
-            .then(() => {
-              setScanning(true)
-              scanningRef.current = true
-              requestAnimationFrame(tick)
-            })
-            .catch(err => {
-              console.error('Error playing video:', err)
-              setError('Unable to start camera preview')
-            })
-        }
-      }
+    if (!videoRef.current) {
+      setError('Video element not ready')
+      return
     }
-  } catch (err) {
+    
+    videoRef.current.srcObject = stream
+    streamRef.current = stream
+    
+    // Wait for the video to actually be ready
+    const playPromise = videoRef.current.play()
+    
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          console.log('Video playing successfully')
+          setScanning(true)
+          scanningRef.current = true
+          
+          // Give it a moment to stabilize
+          setTimeout(() => {
+            requestAnimationFrame(tick)
+          }, 100)
+        })
+        .catch(err => {
+          console.error('Play failed:', err)
+          setError('Camera preview failed to start. Try again.')
+          stopCamera()
+        })
+    }
+  } catch (err: any) {
     console.error('Error accessing camera:', err)
-    setError('Unable to access camera. Please check permissions.')
+    setError(`Camera error: ${err.message || 'Please check permissions'}`)
+    stopCamera()
   }
 }
 
