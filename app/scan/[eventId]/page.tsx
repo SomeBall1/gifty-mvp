@@ -33,6 +33,13 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
     }
   }, [])
 
+  // Initialize camera when scanning becomes true
+  useEffect(() => {
+    if (scanning && videoRef.current && !streamRef.current) {
+      initCamera()
+    }
+  }, [scanning])
+
   const checkEventPin = async () => {
     const { data: event, error } = await supabase
       .from('events')
@@ -82,55 +89,61 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
       })
   }
 
-const startCamera = async () => {
-  setError('')
-  setResult(null)
-  
-  try {
-    // Stop any existing streams first
-    stopCamera()
-    
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { 
-        facingMode: 'environment'
-      }
-    })
-    
-    if (!videoRef.current) {
-      setError('Video element not ready')
-      return
-    }
-    
-    videoRef.current.srcObject = stream
-    streamRef.current = stream
-    
-    // Wait for the video to actually be ready
-    const playPromise = videoRef.current.play()
-    
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          console.log('Video playing successfully')
-          setScanning(true)
-          scanningRef.current = true
-          
-          // Give it a moment to stabilize
-          setTimeout(() => {
-            requestAnimationFrame(tick)
-          }, 100)
-        })
-        .catch(err => {
-          console.error('Play failed:', err)
-          setError('Camera preview failed to start. Try again.')
-          stopCamera()
-        })
-    }
-  } catch (err: any) {
-    console.error('Error accessing camera:', err)
-    setError(`Camera error: ${err.message || 'Please check permissions'}`)
-    stopCamera()
+  const startCamera = () => {
+    setError('')
+    setResult(null)
+    setScanning(true) // This triggers the useEffect that initializes the camera
   }
-}
+
+  const initCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      })
+      
+      if (!videoRef.current) {
+        setError('Camera initialization failed')
+        setScanning(false)
+        return
+      }
+      
+      videoRef.current.srcObject = stream
+      streamRef.current = stream
+      
+      // Wait for video to be ready and play
+      videoRef.current.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current.play()
+            .then(() => {
+              console.log('Video playing successfully')
+              scanningRef.current = true
+              // Start the scanning loop
+              setTimeout(() => {
+                requestAnimationFrame(tick)
+              }, 100)
+            })
+            .catch(err => {
+              console.error('Play failed:', err)
+              setError('Failed to start camera preview')
+              stopCamera()
+            })
+        }
+      }
+    } catch (err: any) {
+      console.error('Error accessing camera:', err)
+      const errorMsg = err.name === 'NotAllowedError' 
+        ? 'Camera permission denied. Please allow camera access.'
+        : err.name === 'NotFoundError'
+        ? 'No camera found on this device.'
+        : `Camera error: ${err.message}`
+      setError(errorMsg)
+      setScanning(false)
+    }
+  }
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -361,6 +374,7 @@ const startCamera = async () => {
                 ref={videoRef}
                 autoPlay
                 playsInline
+                muted
                 className="absolute inset-0 w-full h-full object-cover"
               />
               <canvas
