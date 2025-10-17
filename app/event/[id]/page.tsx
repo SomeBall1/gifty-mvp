@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Crown, CheckCircle2, Circle, Camera, Menu, Search, ArrowLeft, Download, Mail } from 'lucide-react';
+import { Crown, CheckCircle2, Circle, Camera, Search, ArrowLeft } from 'lucide-react';
 
 export default function EventDashboard() {
   const params = useParams();
   const router = useRouter();
   const eventId = params.id;
 
-  const [event, setEvent] = useState(null);
-  const [guests, setGuests] = useState([]);
+  const [event, setEvent] = useState<any>(null);
+  const [guests, setGuests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
@@ -49,9 +49,9 @@ export default function EventDashboard() {
     }
   };
 
-  const filteredGuests = guests.filter(guest => {
-    const matchesSearch = guest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         guest.email.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredGuests = guests.filter((guest: any) => {
+    const matchesSearch = guest.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         guest.email?.toLowerCase().includes(searchQuery.toLowerCase());
     
     if (activeTab === 'all') return matchesSearch;
     if (activeTab === 'claimed') return matchesSearch && guest.claimed;
@@ -60,7 +60,7 @@ export default function EventDashboard() {
     return matchesSearch;
   });
 
-  const claimedCount = guests.filter(g => g.claimed).length;
+  const claimedCount = guests.filter((g: any) => g.claimed).length;
   const totalGuests = guests.length;
 
   if (loading) {
@@ -98,7 +98,7 @@ export default function EventDashboard() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <button
-            onClick={() => router.push('/events')}
+            onClick={() => router.push('/dashboard')}
             style={{
               background: 'transparent',
               border: 'none',
@@ -215,7 +215,7 @@ export default function EventDashboard() {
             <p style={{ fontSize: '14px' }}>Try adjusting your search or filter</p>
           </div>
         ) : (
-          filteredGuests.map(guest => (
+          filteredGuests.map((guest: any) => (
             <div 
               key={guest.id}
               style={{
