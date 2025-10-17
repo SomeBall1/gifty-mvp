@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -9,7 +9,7 @@ interface Event {
   id: string
   name: string
   date: string
-  scanner_pin: string | null
+  created_at: string
 }
 
 export default function DashboardPage() {
@@ -20,32 +20,25 @@ export default function DashboardPage() {
   const [newEventDate, setNewEventDate] = useState('')
   const [newEventPin, setNewEventPin] = useState('')
   const [creating, setCreating] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  
-  const supabase = createClient()
   const router = useRouter()
+  const supabase = createClient()
 
   useEffect(() => {
-    checkUser()
+    checkAuth()
     fetchEvents()
   }, [])
 
-  const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+  const checkAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
       router.push('/login')
     }
   }
 
   const fetchEvents = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .eq('user_id', user.id)
       .order('date', { ascending: false })
 
     if (error) {
@@ -56,33 +49,32 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
     setCreating(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    
+    if (!user) {
+      alert('You must be logged in to create an event')
+      return
+    }
 
     const { data, error } = await supabase
       .from('events')
       .insert([
-        {
-          user_id: user.id,
-          name: newEventName,
+        { 
+          name: newEventName, 
           date: newEventDate,
           scanner_pin: newEventPin || null,
-        },
+          user_id: user.id 
+        }
       ])
       .select()
 
     if (error) {
       console.error('Error creating event:', error)
-      alert('Error creating event. Please try again.')
+      alert('Error creating event: ' + error.message)
     } else {
       setNewEventName('')
       setNewEventDate('')
@@ -93,39 +85,9 @@ export default function DashboardPage() {
     setCreating(false)
   }
 
-  const handleDeleteEvent = async (eventId: string, eventName: string) => {
-    // First click: ask for confirmation
-    if (deleteConfirm !== eventId) {
-      setDeleteConfirm(eventId)
-      return
-    }
-
-    // Second click: actually delete
-    setDeleting(true)
-
-    try {
-      const response = await fetch('/api/delete-event', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ eventId }),
-      })
-
-      if (response.ok) {
-        // Remove from UI immediately
-        setEvents(events.filter(e => e.id !== eventId))
-        setDeleteConfirm(null)
-      } else {
-        const data = await response.json()
-        alert(data.error || 'Error deleting event')
-      }
-    } catch (error) {
-      console.error('Error deleting event:', error)
-      alert('Error deleting event. Please try again.')
-    }
-
-    setDeleting(false)
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
   }
 
   if (loading) {
@@ -182,62 +144,26 @@ export default function DashboardPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((event) => (
-              <div
+              <Link
                 key={event.id}
-                className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:border-gray-300 transition-all relative group"
+                href={`/event/${event.id}`}
+                className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow border border-gray-200 hover:border-gray-300"
               >
-                {/* Delete Button */}
-                <button
-                  onClick={(e) => {
-                    e.preventDefault()
-                    handleDeleteEvent(event.id, event.name)
-                  }}
-                  disabled={deleting}
-                  className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    deleteConfirm === event.id
-                      ? 'bg-red-500 text-white hover:bg-red-600'
-                      : 'bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-600 opacity-0 group-hover:opacity-100'
-                  }`}
-                  title={deleteConfirm === event.id ? 'Click again to confirm' : 'Delete event'}
-                >
-                  {deleting && deleteConfirm === event.id ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  )}
-                </button>
-
-                <Link href={`/event/${event.id}`} className="block">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2 pr-10">{event.name}</h3>
-                  <p className="text-gray-600 text-sm">
-                    {new Date(event.date).toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </p>
-                  {event.scanner_pin && (
-                    <div className="mt-3 inline-flex items-center px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
-                      🔒 PIN Protected
-                    </div>
-                  )}
-                  <div className="mt-4">
-                    <span className="text-gray-900 font-medium hover:underline">
-                      Manage Event →
-                    </span>
-                  </div>
-                </Link>
-
-                {/* Delete Confirmation Message */}
-                {deleteConfirm === event.id && (
-                  <div className="mt-3 text-xs text-red-600 font-medium">
-                    ⚠️ Click delete again to confirm
-                  </div>
-                )}
-              </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">{event.name}</h3>
+                <p className="text-gray-600 text-sm">
+                  {new Date(event.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+                <div className="mt-4">
+                  <span className="text-gray-900 font-medium hover:underline">
+                    Manage Event →
+                  </span>
+                </div>
+              </Link>
             ))}
           </div>
         )}
