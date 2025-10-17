@@ -11,11 +11,11 @@ export default function ScannerPage() {
   const eventId = params.eventId;
 
   const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [guestData, setGuestData] = useState(null);
-  const [cameraError, setCameraError] = useState(null);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [guestData, setGuestData] = useState<any>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   
-  const html5QrCodeRef = useRef(null);
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
   // Color palette
   const colors = {
@@ -71,7 +71,7 @@ export default function ScannerPage() {
     }
   };
 
-  const onScanSuccess = async (decodedText) => {
+  const onScanSuccess = async (decodedText: string) => {
     stopScanner();
 
     try {
@@ -110,7 +110,7 @@ export default function ScannerPage() {
     }
   };
 
-  const onScanFailure = (error) => {
+  const onScanFailure = (error: any) => {
     // Silent - no need to show every scan attempt failure
   };
 
@@ -147,7 +147,7 @@ export default function ScannerPage() {
           gap: '12px'
         }}>
           <button
-            onClick={() => router.push(`/events/${eventId}`)}
+            onClick={() => router.push(`/event/${eventId}`)}
             style={{
               background: 'transparent',
               border: 'none',
@@ -220,7 +220,7 @@ export default function ScannerPage() {
         gap: '12px'
       }}>
         <button
-          onClick={() => router.push(`/events/${eventId}`)}
+          onClick={() => router.push(`/event/${eventId}`)}
           style={{
             background: 'transparent',
             border: 'none',
