@@ -94,6 +94,10 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
+        
+        // Wait for video to load, then play
+        await videoRef.current.play()
+        
         setScanning(true)
         scanningRef.current = true
         requestAnimationFrame(tick)
