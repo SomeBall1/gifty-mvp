@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import jsQR from 'jsqr'
-import { createBrowserClient } from '@/lib/supabase-client'
+import { createClient  } from '@/lib/supabase-client'
 
 interface ScanResult {
   type: 'success' | 'already_claimed' | 'invalid'
@@ -26,7 +26,7 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
   const streamRef = useRef<MediaStream | null>(null)
   const scanningRef = useRef(false)
 
-  const supabase = createBrowserClient()
+  const supabase = createClient ()
 
   useEffect(() => {
     fetchEventInfo()
