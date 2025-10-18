@@ -367,13 +367,13 @@ export default function DashboardPage() {
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = `linear-gradient(135deg, ${colors.gold}15 0%, ${colors.goldLight}10 100%)`
-                    e.currentTarget.style.WebkitBackgroundClip = 'text'
-                    e.currentTarget.style.WebkitTextFillColor = 'transparent'
+                    e.currentTarget.style.webkitBackgroundClip = 'text'
+                    e.currentTarget.style.webkitTextFillColor = 'transparent'
                     e.currentTarget.style.backgroundClip = 'text'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'none'
-                    e.currentTarget.style.WebkitTextFillColor = colors.text
+                    e.currentTarget.style.webkitTextFillColor = colors.text
                   }}
                   >
                     {event.name}
