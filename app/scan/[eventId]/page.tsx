@@ -1,133 +1,549 @@
-'use client';
+'use client'
 
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Crown, CheckCircle2, Circle, Camera, ArrowLeft, Sparkles } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { useState, useEffect, useRef } from 'use'
+import { createClient } from '@/lib/supabase-client'
+import jsQR from 'jsqr'
+import { ArrowLeft, Camera } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
-export default function ScannerPage() {
-  const params = useParams();
-  const router = useRouter();
-  const eventId = params.eventId;
+type ScanResult = {
+  type: 'success' | 'already_claimed' | 'invalid'
+  name?: string
+  tier?: string
+}
 
-  const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<string | null>(null);
-  const [guestData, setGuestData] = useState<any>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  
-  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+// Deep charcoal + gold color scheme
+const colors = {
+  bg: '#0f0f0f',
+  cardBg: '#1a1a1a',
+  text: '#f5f5f0',
+  textMuted: '#a0a0a0',
+  gold: '#c9a961',
+  goldLight: '#d4af6f',
+  border: '#2a2a2a',
+  success: '#8b9474', // Muted sage green
+  error: '#8b7474', // Muted rose
+  warning: '#9b8b74' // Muted amber
+}
 
-  // Color palette
-  const colors = {
-    bg: '#0f0f0f',
-    cardBg: '#1a1a1a',
-    gold: '#c9a961',
-    goldLight: '#d4af37',
-    text: '#f5f5f0',
-    textMuted: '#a8a8a0',
-    success: '#4a7c59',
-    successGlow: 'rgba(201, 169, 97, 0.15)',
-    border: '#2a2a2a',
-    purple: '#2d2640',
-    richGrey: '#4a4a4a',
-    softGrey: '#6a6a6a',
-    greyGlow: 'rgba(106, 106, 106, 0.12)'
-  };
+export default function ScannerPage({ params }: { params: { eventId: string } }) {
+  const router = useRouter()
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [pin, setPin] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [eventName, setEventName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [hasPin, setHasPin] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [result, setResult] = useState<ScanResult | null>(null)
+  const [error, setError] = useState('')
+  const [cameraError, setCameraError] = useState('')
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const scanningRef = useRef(false)
+  const supabase = createClient()
 
   useEffect(() => {
-    startScanner();
+    checkEventPin()
     return () => {
-      stopScanner();
-    };
-  }, []);
-
-  const startScanner = async () => {
-    try {
-      const html5QrCode = new Html5Qrcode("qr-reader");
-      html5QrCodeRef.current = html5QrCode;
-
-      await html5QrCode.start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
-        onScanSuccess,
-        onScanFailure
-      );
-
-      setScanning(true);
-      setCameraError(null);
-    } catch (err) {
-      console.error("Camera error:", err);
-      setCameraError("Unable to access camera. Please check permissions.");
+      stopCamera()
     }
-  };
+  }, [])
 
-  const stopScanner = () => {
-    if (html5QrCodeRef.current && scanning) {
-      html5QrCodeRef.current.stop().catch(err => console.error("Error stopping scanner:", err));
-      setScanning(false);
+  const checkEventPin = async () => {
+    const { data: event, error } = await supabase
+      .from('events')
+      .select('name, scanner_pin')
+      .eq('id', params.eventId)
+      .single()
+
+    if (error || !event) {
+      setError('Event not found')
+      setLoading(false)
+      return
     }
-  };
 
-  const onScanSuccess = async (decodedText: string) => {
-    stopScanner();
+    setEventName(event.name)
+    
+    if (!event.scanner_pin) {
+      setIsAuthenticated(true)
+      setHasPin(false)
+    } else {
+      setHasPin(true)
+    }
+    
+    setLoading(false)
+  }
 
+  const verifyPin = () => {
+    setPinError('')
+    
+    supabase
+      .from('events')
+      .select('scanner_pin')
+      .eq('id', params.eventId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          setPinError('Error verifying PIN')
+          return
+        }
+
+        if (data.scanner_pin === pin) {
+          setIsAuthenticated(true)
+        } else {
+          setPinError('Incorrect PIN')
+          setPin('')
+        }
+      })
+  }
+
+  const startCamera = async () => {
+    console.log('Starting camera...')
+    setError('')
+    setCameraError('')
+    setResult(null)
+    setScanning(true)
+    
+    // Give React time to render the video element
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    await initCamera()
+  }
+
+  const initCamera = async () => {
     try {
-      const url = new URL(decodedText);
-      const guestId = url.searchParams.get('guest_id');
-
-      if (!guestId) {
-        setScanResult('invalid');
-        setTimeout(resetScanner, 3000);
-        return;
+      console.log('Requesting camera permission...')
+      
+      // Stop any existing camera first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
       }
 
-      const response = await fetch('/api/verify-qr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, guestId })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setScanResult('success');
-        setGuestData(data.guest);
-      } else if (data.error === 'already_claimed') {
-        setScanResult('already-claimed');
-        setGuestData(data.guest);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      })
+      
+      console.log('Camera permission granted, stream obtained')
+      
+      if (!videoRef.current) {
+        console.error('Video ref not available')
+        setCameraError('Camera initialization failed. Please try again.')
+        setScanning(false)
+        return
+      }
+      
+      videoRef.current.srcObject = stream
+      streamRef.current = stream
+      
+      videoRef.current.onloadedmetadata = () => {
+        console.log('Video metadata loaded')
+        if (videoRef.current) {
+          videoRef.current.play()
+            .then(() => {
+              console.log('Video playing successfully')
+              scanningRef.current = true
+              setTimeout(() => {
+                requestAnimationFrame(tick)
+              }, 100)
+            })
+            .catch(err => {
+              console.error('Play failed:', err)
+              setCameraError('Failed to start camera preview. Please try again.')
+              stopCamera()
+            })
+        }
+      }
+    } catch (err: any) {
+      console.error('Error accessing camera:', err)
+      let errorMsg = 'Unable to access camera. '
+      
+      if (err.name === 'NotAllowedError') {
+        errorMsg += 'Camera permission was denied. Please allow camera access in your browser settings and try again.'
+      } else if (err.name === 'NotFoundError') {
+        errorMsg += 'No camera was found on this device.'
+      } else if (err.name === 'NotReadableError') {
+        errorMsg += 'Camera is being used by another application. Please close other apps and try again.'
       } else {
-        setScanResult('invalid');
+        errorMsg += 'Please check permissions.'
+      }
+      
+      setCameraError(errorMsg)
+      setScanning(false)
+    }
+  }
+
+  const stopCamera = () => {
+    console.log('Stopping camera...')
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop()
+        console.log('Stopped track:', track.kind)
+      })
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    setScanning(false)
+    scanningRef.current = false
+  }
+
+  const tick = () => {
+    if (!scanningRef.current || !videoRef.current || !canvasRef.current) {
+      return
+    }
+
+    const video = videoRef.current
+    const canvas = canvasRef.current
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.height = video.videoHeight
+      canvas.width = video.videoWidth
+      const ctx = canvas.getContext('2d')
+      
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'dontInvert',
+        })
+
+        if (code) {
+          console.log('QR code detected:', code.data)
+          handleQRCode(code.data)
+          return
+        }
+      }
+    }
+
+    requestAnimationFrame(tick)
+  }
+
+  const handleQRCode = async (data: string) => {
+    stopCamera()
+    
+    try {
+      console.log('Processing QR code data:', data)
+      
+      // Extract guest_id from the URL
+      const url = new URL(data)
+      const guestId = url.searchParams.get('guest_id')
+      
+      console.log('Extracted guest_id:', guestId)
+      
+      if (!guestId) {
+        console.error('No guest_id found in QR code')
+        setResult({ type: 'invalid' })
+        return
       }
 
-      setTimeout(resetScanner, 4000);
-    } catch (error) {
-      console.error('Scan error:', error);
-      setScanResult('invalid');
-      setTimeout(resetScanner, 3000);
-    }
-  };
+      console.log('Calling verification API...')
+      const response = await fetch('/api/verify-guest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ guestId }),
+      })
 
-  const onScanFailure = (error: any) => {
-    // Silent - no need to show every scan attempt failure
-  };
+      console.log('API response status:', response.status)
+      const responseData = await response.json()
+      console.log('API response data:', responseData)
+
+      if (response.ok) {
+        setResult({
+          type: 'success',
+          name: responseData.name,
+          tier: responseData.tier,
+        })
+      } else if (response.status === 409) {
+        setResult({
+          type: 'already_claimed',
+          name: responseData.name,
+          tier: responseData.tier,
+        })
+      } else {
+        console.error('Verification failed:', responseData)
+        setResult({ type: 'invalid' })
+      }
+    } catch (err) {
+      console.error('Error processing QR code:', err)
+      setResult({ type: 'invalid' })
+    }
+  }
 
   const resetScanner = () => {
-    setScanResult(null);
-    setGuestData(null);
-    startScanner();
-  };
+    console.log('Resetting scanner')
+    setResult(null)
+    setError('')
+    setCameraError('')
+  }
 
-  const manualReset = () => {
-    setScanResult(null);
-    setGuestData(null);
-    if (!scanning) {
-      startScanner();
-    }
-  };
+  // Loading screen
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.bg,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ color: colors.text, fontSize: '20px' }}>Loading...</div>
+      </div>
+    )
+  }
 
+  // PIN entry screen
+  if (!isAuthenticated && hasPin) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.bg,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px'
+      }}>
+        <div style={{
+          background: colors.cardBg,
+          borderRadius: '16px',
+          padding: '32px',
+          maxWidth: '400px',
+          width: '100%',
+          border: `1px solid ${colors.border}`
+        }}>
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: '600',
+            color: colors.text,
+            marginBottom: '8px',
+            textAlign: 'center'
+          }}>
+            {eventName}
+          </h1>
+          <p style={{
+            color: colors.textMuted,
+            textAlign: 'center',
+            marginBottom: '24px',
+            fontSize: '14px'
+          }}>
+            Scanner Access
+          </p>
+          
+          <form onSubmit={(e) => { e.preventDefault(); verifyPin(); }}>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: colors.text,
+                marginBottom: '8px'
+              }}>
+                Enter Scanner PIN
+              </label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  background: colors.bg,
+                  color: colors.text,
+                  fontSize: '18px',
+                  textAlign: 'center',
+                  letterSpacing: '4px',
+                  outline: 'none'
+                }}
+                placeholder="••••"
+                autoFocus
+                maxLength={10}
+              />
+              {pinError && (
+                <p style={{
+                  marginTop: '8px',
+                  color: colors.error,
+                  fontSize: '14px',
+                  textAlign: 'center'
+                }}>
+                  {pinError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              style={{
+                width: '100%',
+                background: colors.gold,
+                color: colors.bg,
+                padding: '12px',
+                borderRadius: '8px',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Access Scanner
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  // Result screens
+  if (result?.type === 'success') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.success,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: '128px', marginBottom: '32px' }}>✓</div>
+        <h1 style={{
+          fontSize: '48px',
+          fontWeight: '700',
+          color: 'white',
+          marginBottom: '16px',
+          wordBreak: 'break-word'
+        }}>
+          {result.name}
+        </h1>
+        <p style={{
+          fontSize: '32px',
+          fontWeight: '600',
+          color: 'white',
+          marginBottom: '48px'
+        }}>
+          {result.tier} Confirmed
+        </p>
+        <button
+          onClick={resetScanner}
+          style={{
+            background: 'white',
+            color: colors.success,
+            padding: '16px 48px',
+            borderRadius: '16px',
+            border: 'none',
+            fontSize: '24px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  if (result?.type === 'already_claimed') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.error,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: '128px', marginBottom: '32px' }}>✕</div>
+        <h1 style={{
+          fontSize: '48px',
+          fontWeight: '700',
+          color: 'white',
+          marginBottom: '16px',
+          wordBreak: 'break-word'
+        }}>
+          {result.name}
+        </h1>
+        <p style={{
+          fontSize: '32px',
+          fontWeight: '600',
+          color: 'white',
+          marginBottom: '48px'
+        }}>
+          ALREADY CLAIMED
+        </p>
+        <button
+          onClick={resetScanner}
+          style={{
+            background: 'white',
+            color: colors.error,
+            padding: '16px 48px',
+            borderRadius: '16px',
+            border: 'none',
+            fontSize: '24px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  if (result?.type === 'invalid') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.warning,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: '128px', marginBottom: '32px' }}>⚠</div>
+        <h1 style={{
+          fontSize: '48px',
+          fontWeight: '700',
+          color: 'white',
+          marginBottom: '48px'
+        }}>
+          QR CODE NOT RECOGNIZED
+        </h1>
+        <button
+          onClick={resetScanner}
+          style={{
+            background: 'white',
+            color: colors.warning,
+            padding: '16px 48px',
+            borderRadius: '16px',
+            border: 'none',
+            fontSize: '24px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  // Camera error screen (with working Try Again button!)
   if (cameraError) {
     return (
       <div style={{
@@ -147,7 +563,7 @@ export default function ScannerPage() {
           gap: '12px'
         }}>
           <button
-            onClick={() => router.push(`/event/${eventId}`)}
+            onClick={() => router.push(`/event/${params.eventId}`)}
             style={{
               background: 'transparent',
               border: 'none',
@@ -178,35 +594,45 @@ export default function ScannerPage() {
           <h3 style={{ fontSize: '20px', color: colors.text, marginBottom: '12px' }}>
             Camera Access Needed
           </h3>
-          <p style={{ fontSize: '15px', color: colors.textMuted, marginBottom: '32px', maxWidth: '320px' }}>
+          <p style={{
+            fontSize: '15px',
+            color: colors.textMuted,
+            marginBottom: '32px',
+            maxWidth: '400px',
+            lineHeight: '1.5'
+          }}>
             {cameraError}
           </p>
           <button
-            onClick={startScanner}
+            onClick={() => {
+              console.log('Try Again button clicked')
+              setCameraError('')
+              setScanning(false)
+              startCamera()
+            }}
             style={{
               background: colors.gold,
-              border: 'none',
               color: colors.bg,
+              border: 'none',
               padding: '14px 32px',
-              borderRadius: '12px',
-              fontSize: '15px',
-              cursor: 'pointer',
-              fontWeight: '500'
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer'
             }}
           >
             Try Again
           </button>
         </div>
       </div>
-    );
+    )
   }
 
+  // Scanner interface
   return (
-    <div style={{ 
-      minHeight: '100vh', 
+    <div style={{
+      minHeight: '100vh',
       background: colors.bg,
-      color: colors.text,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       display: 'flex',
       flexDirection: 'column'
     }}>
@@ -220,7 +646,7 @@ export default function ScannerPage() {
         gap: '12px'
       }}>
         <button
-          onClick={() => router.push(`/event/${eventId}`)}
+          onClick={() => router.push(`/event/${params.eventId}`)}
           style={{
             background: 'transparent',
             border: 'none',
@@ -234,386 +660,76 @@ export default function ScannerPage() {
           <ArrowLeft size={24} />
         </button>
         <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '400', flex: 1 }}>
-          Scan Guest QR Code
+          Scanner
         </h2>
       </div>
 
-      {/* Scanner/Result Area */}
-      {!scanResult ? (
-        <div style={{ 
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px'
-        }}>
-          {/* Camera Preview */}
-          <div style={{
-            width: '100%',
-            maxWidth: '400px',
-            aspectRatio: '1',
-            background: `linear-gradient(135deg, ${colors.cardBg} 0%, ${colors.purple} 100%)`,
-            borderRadius: '24px',
-            border: `2px solid ${colors.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '32px',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            {/* QR Reader Container */}
-            <div id="qr-reader" style={{ width: '100%', height: '100%' }}></div>
-
-            {/* Scanning Corners */}
-            <div style={{
-              position: 'absolute',
-              top: '40px',
-              left: '40px',
-              width: '40px',
-              height: '40px',
-              borderTop: `3px solid ${colors.gold}`,
-              borderLeft: `3px solid ${colors.gold}`,
-              borderRadius: '4px 0 0 0',
-              pointerEvents: 'none'
-            }} />
-            <div style={{
-              position: 'absolute',
-              top: '40px',
-              right: '40px',
-              width: '40px',
-              height: '40px',
-              borderTop: `3px solid ${colors.gold}`,
-              borderRight: `3px solid ${colors.gold}`,
-              borderRadius: '0 4px 0 0',
-              pointerEvents: 'none'
-            }} />
-            <div style={{
-              position: 'absolute',
-              bottom: '40px',
-              left: '40px',
-              width: '40px',
-              height: '40px',
-              borderBottom: `3px solid ${colors.gold}`,
-              borderLeft: `3px solid ${colors.gold}`,
-              borderRadius: '0 0 0 4px',
-              pointerEvents: 'none'
-            }} />
-            <div style={{
-              position: 'absolute',
-              bottom: '40px',
-              right: '40px',
-              width: '40px',
-              height: '40px',
-              borderBottom: `3px solid ${colors.gold}`,
-              borderRight: `3px solid ${colors.gold}`,
-              borderRadius: '0 0 4px 0',
-              pointerEvents: 'none'
-            }} />
-          </div>
-
-          <p style={{ 
-            fontSize: '15px',
-            color: colors.textMuted,
-            textAlign: 'center',
-            marginBottom: '8px'
-          }}>
-            Position the QR code within the frame
-          </p>
-          <p style={{ 
-            fontSize: '13px',
-            color: colors.softGrey,
-            textAlign: 'center'
-          }}>
-            Scanning automatically...
-          </p>
-        </div>
-      ) : (
-        // Scan Result
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          background: scanResult === 'success' 
-            ? `linear-gradient(135deg, ${colors.bg} 0%, ${colors.success}20 100%)`
-            : scanResult === 'already-claimed'
-            ? `linear-gradient(135deg, ${colors.bg} 0%, ${colors.greyGlow} 100%)`
-            : `linear-gradient(135deg, ${colors.bg} 0%, ${colors.purple}20 100%)`
-        }}>
-          {/* Success State */}
-          {scanResult === 'success' && guestData && (
-            <>
-              <div style={{
-                width: '120px',
-                height: '120px',
-                borderRadius: '50%',
-                background: colors.successGlow,
-                border: `3px solid ${colors.gold}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '32px',
-                position: 'relative'
-              }}>
-                <CheckCircle2 size={64} color={colors.gold} />
-                <div style={{
-                  position: 'absolute',
-                  top: '-10px',
-                  right: '-10px',
-                  animation: 'sparkle 1.5s ease-in-out infinite'
-                }}>
-                  <Sparkles size={24} color={colors.goldLight} />
-                </div>
-              </div>
-
-              <h3 style={{ 
-                fontSize: '28px',
-                fontWeight: '300',
-                margin: '0 0 16px 0',
-                color: colors.gold,
-                letterSpacing: '1px'
-              }}>Welcome</h3>
-              
-              <p style={{ 
-                fontSize: '20px',
-                color: colors.text,
-                margin: '0 0 12px 0',
-                fontWeight: '500'
-              }}>{guestData.name}</p>
-              
-              {guestData.tier === 'VIP' && (
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: `${colors.gold}20`,
-                  padding: '8px 20px',
-                  borderRadius: '10px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: colors.gold,
-                  marginBottom: '32px',
-                  letterSpacing: '0.5px'
-                }}>
-                  <Crown size={16} />
-                  VIP GUEST
-                </div>
-              )}
-              
-              <div style={{
-                background: colors.cardBg,
-                border: `1px solid ${colors.gold}30`,
-                borderRadius: '16px',
-                padding: '20px',
-                marginTop: '16px',
-                textAlign: 'center',
-                maxWidth: '320px'
-              }}>
-                <p style={{ 
-                  fontSize: '15px',
-                  color: colors.text,
-                  margin: '0 0 8px 0',
-                  fontWeight: '500'
-                }}>✓ Goodie Bag Claimed</p>
-                <p style={{ 
-                  fontSize: '13px',
-                  color: colors.textMuted,
-                  margin: 0
-                }}>Thank you for attending</p>
-              </div>
-
-              <button
-                onClick={manualReset}
-                style={{
-                  marginTop: '48px',
-                  background: colors.gold,
-                  border: 'none',
-                  color: colors.bg,
-                  padding: '14px 40px',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  boxShadow: `0 4px 16px ${colors.gold}40`
-                }}
-              >
-                Next Guest
-              </button>
-            </>
-          )}
-
-          {/* Already Claimed State - Rich Grey, Classy */}
-          {scanResult === 'already-claimed' && guestData && (
-            <>
-              <div style={{
-                width: '120px',
-                height: '120px',
-                borderRadius: '50%',
-                background: colors.greyGlow,
-                border: `3px solid ${colors.softGrey}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '32px'
-              }}>
-                <CheckCircle2 size={64} color={colors.softGrey} />
-              </div>
-
-              <h3 style={{ 
-                fontSize: '24px',
-                fontWeight: '300',
-                margin: '0 0 16px 0',
-                color: colors.softGrey,
-                letterSpacing: '0.5px'
-              }}>Already Checked In</h3>
-              
-              <p style={{ 
+      {/* Camera View or Start Button */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: scanning ? '0' : '24px',
+        position: 'relative'
+      }}>
+        {!scanning ? (
+          <div style={{ textAlign: 'center' }}>
+            <Camera size={64} color={colors.gold} style={{ marginBottom: '24px' }} />
+            <h3 style={{
+              fontSize: '20px',
+              color: colors.text,
+              marginBottom: '32px'
+            }}>
+              {eventName}
+            </h3>
+            <button
+              onClick={startCamera}
+              style={{
+                background: colors.gold,
+                color: colors.bg,
+                border: 'none',
+                padding: '16px 32px',
+                borderRadius: '8px',
                 fontSize: '18px',
-                color: colors.text,
-                margin: '0 0 12px 0',
-                fontWeight: '500'
-              }}>{guestData.name}</p>
-              
-              {guestData.tier === 'VIP' && (
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: `${colors.softGrey}20`,
-                  padding: '6px 16px',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  color: colors.softGrey,
-                  marginBottom: '24px'
-                }}>
-                  <Crown size={14} />
-                  VIP
-                </div>
-              )}
-
-              <div style={{
-                background: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '16px',
-                padding: '20px',
-                marginTop: '16px',
-                textAlign: 'center',
-                maxWidth: '320px'
-              }}>
-                <p style={{ 
-                  fontSize: '14px',
-                  color: colors.textMuted,
-                  margin: '0 0 8px 0'
-                }}>Goodie bag collected earlier</p>
-                {guestData.claimed_at && (
-                  <p style={{ 
-                    fontSize: '13px',
-                    color: colors.softGrey,
-                    margin: 0
-                  }}>
-                    at {new Date(guestData.claimed_at).toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    })}
-                  </p>
-                )}
-              </div>
-
-              <button
-                onClick={manualReset}
-                style={{
-                  marginTop: '48px',
-                  background: colors.cardBg,
-                  border: `1px solid ${colors.softGrey}`,
-                  color: colors.softGrey,
-                  padding: '14px 40px',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  fontWeight: '500'
-                }}
-              >
-                Next Guest
-              </button>
-            </>
-          )}
-
-          {/* Invalid State - Still Classy */}
-          {scanResult === 'invalid' && (
-            <>
-              <div style={{
-                width: '120px',
-                height: '120px',
-                borderRadius: '50%',
-                background: colors.greyGlow,
-                border: `3px solid ${colors.richGrey}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '32px'
-              }}>
-                <Circle size={64} color={colors.richGrey} />
-              </div>
-
-              <h3 style={{ 
-                fontSize: '24px',
-                fontWeight: '300',
-                margin: '0 0 16px 0',
-                color: colors.richGrey
-              }}>QR Code Not Recognized</h3>
-              
-              <p style={{ 
-                fontSize: '14px',
-                color: colors.textMuted,
-                textAlign: 'center',
-                maxWidth: '280px',
-                lineHeight: '1.6'
-              }}>
-                This code may not be for this event. Please check with event staff.
-              </p>
-
-              <button
-                onClick={manualReset}
-                style={{
-                  marginTop: '48px',
-                  background: colors.cardBg,
-                  border: `1px solid ${colors.richGrey}`,
-                  color: colors.text,
-                  padding: '14px 40px',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  fontWeight: '500'
-                }}
-              >
-                Try Again
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      <style jsx>{`
-        @keyframes sparkle {
-          0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
-          50% { opacity: 0.6; transform: scale(1.1) rotate(180deg); }
-        }
-
-        #qr-reader video {
-          border-radius: 20px;
-          object-fit: cover;
-        }
-
-        #qr-reader__dashboard {
-          display: none !important;
-        }
-      `}</style>
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Scan QR Code
+            </button>
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              }}
+              playsInline
+              muted
+            />
+            <canvas
+              ref={canvasRef}
+              style={{ display: 'none' }}
+            />
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '250px',
+              height: '250px',
+              border: `3px solid ${colors.gold}`,
+              borderRadius: '16px',
+              pointerEvents: 'none'
+            }} />
+          </>
+        )}
+      </div>
     </div>
-  );
+  )
 }
