@@ -1,67 +1,246 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Crown, CheckCircle2, Circle, Camera, Search, ArrowLeft } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react'
+import { createClient } from '@/lib/supabase-client'
+import { useRouter } from 'next/navigation'
+import Papa from 'papaparse'
+import QRCode from 'qrcode'
+import Link from 'next/link'
+import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown } from 'lucide-react'
 
-export default function EventDashboard() {
-  const params = useParams();
-  const router = useRouter();
-  const eventId = params.id;
+interface Guest {
+  id: string
+  name: string
+  email: string
+  tier: string
+  status: string
+  claimed_at: string | null
+}
 
-  const [event, setEvent] = useState<any>(null);
-  const [guests, setGuests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
+interface Event {
+  id: string
+  name: string
+  date: string
+  scanner_pin: string | null
+}
 
-  // Color palette
+export default function EventDetailPage({ params }: { params: { id: string } }) {
+  const [event, setEvent] = useState<Event | null>(null)
+  const [guests, setGuests] = useState<Guest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [sendingEmails, setSendingEmails] = useState(false)
+  const [downloadingQR, setDownloadingQR] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [emailMessage, setEmailMessage] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
+  const supabase = createClient()
+
+  // Deep charcoal + champagne gold color scheme
   const colors = {
     bg: '#0f0f0f',
     cardBg: '#1a1a1a',
+    charcoalBlue: '#1e2835',
     gold: '#c9a961',
     goldLight: '#d4af37',
     text: '#f5f5f0',
     textMuted: '#a8a8a0',
-    success: '#4a7c59',
-    successGlow: 'rgba(201, 169, 97, 0.15)',
     border: '#2a2a2a',
-    purple: '#2d2640'
-  };
+    richGrey: '#3a3a3a',
+    success: '#4a7c59',
+    successBg: '#1a2f1f'
+  }
 
   useEffect(() => {
-    fetchEventData();
-    // Set up auto-refresh every 3 seconds for live updates
-    const interval = setInterval(fetchEventData, 3000);
-    return () => clearInterval(interval);
-  }, [eventId]);
+    checkAuth()
+    fetchEvent()
+    fetchGuests()
+    
+    // Set up real-time subscription for guest updates
+    const channel = supabase
+      .channel('guests-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'guests',
+          filter: `event_id=eq.${params.id}`
+        },
+        (payload) => {
+          setGuests(prevGuests => 
+            prevGuests.map(guest => 
+              guest.id === payload.new.id ? { ...guest, ...payload.new } as Guest : guest
+            )
+          )
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'guests',
+          filter: `event_id=eq.${params.id}`
+        },
+        (payload) => {
+          setGuests(prevGuests => [...prevGuests, payload.new as Guest])
+        }
+      )
+      .subscribe()
 
-  const fetchEventData = async () => {
-    try {
-      const res = await fetch(`/api/events/${eventId}`);
-      const data = await res.json();
-      setEvent(data.event);
-      setGuests(data.guests || []);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching event:', error);
-      setLoading(false);
+    return () => {
+      supabase.removeChannel(channel)
     }
-  };
+  }, [params.id])
 
-  const filteredGuests = guests.filter((guest: any) => {
-    const matchesSearch = guest.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         guest.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === 'all') return matchesSearch;
-    if (activeTab === 'claimed') return matchesSearch && guest.claimed;
-    if (activeTab === 'pending') return matchesSearch && !guest.claimed;
-    
-    return matchesSearch;
-  });
+  const checkAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      router.push('/login')
+    }
+  }
 
-  const claimedCount = guests.filter((g: any) => g.claimed).length;
-  const totalGuests = guests.length;
+  const fetchEvent = async () => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', params.id)
+      .single()
+
+    if (error) {
+      console.error('Error fetching event:', error)
+    } else {
+      setEvent(data)
+    }
+    setLoading(false)
+  }
+
+  const fetchGuests = async () => {
+    const { data, error } = await supabase
+      .from('guests')
+      .select('*')
+      .eq('event_id', params.id)
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching guests:', error)
+    } else {
+      setGuests(data || [])
+    }
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setUploadMessage('')
+
+    Papa.parse(file, {
+      header: true,
+      complete: async (results) => {
+        const validGuests = results.data.filter((row: any) => {
+          return row.name && row.email && row.tier
+        })
+
+        if (validGuests.length === 0) {
+          setUploadMessage('No valid guests found. Please check your CSV format.')
+          setUploading(false)
+          return
+        }
+
+        const guestsToInsert = validGuests.map((row: any) => ({
+          event_id: params.id,
+          name: row.name.trim(),
+          email: row.email.trim(),
+          tier: row.tier.trim(),
+          status: 'Not Claimed'
+        }))
+
+        const { data, error } = await supabase
+          .from('guests')
+          .insert(guestsToInsert)
+          .select()
+
+        if (error) {
+          setUploadMessage(`Error uploading guests: ${error.message}`)
+        } else {
+          setUploadMessage(`Successfully imported ${data.length} guests!`)
+          fetchGuests()
+          setTimeout(() => setUploadMessage(''), 3000)
+        }
+        setUploading(false)
+      },
+      error: (error) => {
+        setUploadMessage(`Error parsing CSV: ${error.message}`)
+        setUploading(false)
+      }
+    })
+  }
+
+  const downloadAllQRCodes = async () => {
+    if (guests.length === 0) return
+    
+    setDownloadingQR(true)
+    
+    try {
+      const zip = await import('jszip')
+      const JSZip = zip.default
+      const zipFile = new JSZip()
+
+      for (const guest of guests) {
+        const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${params.id}?guest_id=${guest.id}`
+        const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+          width: 600,
+          margin: 2,
+        })
+        
+        const base64Data = qrDataUrl.split(',')[1]
+        const fileName = `${guest.name.replace(/[^a-z0-9]/gi, '_')}_${guest.tier}.png`
+        zipFile.file(fileName, base64Data, { base64: true })
+      }
+
+      const content = await zipFile.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(content)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${event?.name.replace(/[^a-z0-9]/gi, '_')}_QR_Codes.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error creating ZIP:', error)
+      alert('Error downloading QR codes. Please try again.')
+    } finally {
+      setDownloadingQR(false)
+    }
+  }
+
+  const downloadSingleQR = async (guest: Guest) => {
+    const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${params.id}?guest_id=${guest.id}`
+    const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+      width: 600,
+      margin: 2,
+    })
+
+    const link = document.createElement('a')
+    link.href = qrDataUrl
+    link.download = `${guest.name.replace(/[^a-z0-9]/gi, '_')}_${guest.tier}.png`
+    link.click()
+  }
+
+  const filteredGuests = guests.filter(guest =>
+    guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    guest.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    guest.tier.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const claimedCount = guests.filter(g => g.status === 'Claimed').length
+  const totalCount = guests.length
 
   if (loading) {
     return (
@@ -70,258 +249,602 @@ export default function EventDashboard() {
         background: colors.bg,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        color: colors.gold,
-        fontSize: '18px'
+        justifyContent: 'center'
       }}>
-        Loading...
+        <div style={{ color: colors.textMuted }}>Loading...</div>
       </div>
-    );
+    )
+  }
+
+  if (!event) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: colors.bg,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ color: colors.textMuted }}>Event not found</div>
+      </div>
+    )
   }
 
   return (
-    <div style={{ 
-      minHeight: '100vh', 
+    <div style={{
+      minHeight: '100vh',
       background: colors.bg,
-      color: colors.text,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      paddingBottom: '100px'
+      color: colors.text
     }}>
       {/* Header */}
       <div style={{
-        background: `linear-gradient(135deg, ${colors.cardBg} 0%, ${colors.purple} 100%)`,
-        padding: '20px',
+        background: colors.cardBg,
         borderBottom: `1px solid ${colors.border}`,
-        position: 'sticky',
-        top: 0,
-        zIndex: 10
+        padding: '20px 0'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <button
-            onClick={() => router.push('/dashboard')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: colors.gold,
-              cursor: 'pointer',
-              padding: '4px'
-            }}
-          >
-            <ArrowLeft size={24} />
-          </button>
-          <h1 style={{ 
-            margin: 0, 
-            fontSize: '18px', 
-            fontWeight: '600',
-            letterSpacing: '1px',
-            color: colors.gold
-          }}>GIFTY</h1>
-          <div style={{ width: '24px' }} />
-        </div>
-        
-        <h2 style={{ 
-          margin: '0 0 8px 0', 
-          fontSize: '24px',
-          fontWeight: '300',
-          color: colors.text
-        }}>{event?.name}</h2>
-        
-        <div style={{ 
-          display: 'flex', 
-          gap: '16px',
-          fontSize: '14px',
-          color: colors.textMuted,
-          marginTop: '12px'
+        <div style={{
+          maxWidth: '1200px',
+          margin: '0 auto',
+          padding: '0 24px'
         }}>
-          <span style={{ color: colors.gold, fontWeight: '500' }}>{claimedCount}</span>
-          <span>of</span>
-          <span>{totalGuests}</span>
-          <span style={{ color: colors.gold }}>•</span>
-          <span style={{ color: colors.textMuted }}>{totalGuests - claimedCount} pending</span>
+          <Link 
+            href="/dashboard"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: colors.textMuted,
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              transition: 'color 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = colors.text}
+            onMouseLeave={(e) => e.currentTarget.style.color = colors.textMuted}
+          >
+            <ArrowLeft size={16} />
+            Back to Events
+          </Link>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '40px 24px'
+      }}>
+        {/* Event Info */}
+        <div style={{ marginBottom: '40px' }}>
+          <h1 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            marginBottom: '12px',
+            color: colors.text,
+            lineHeight: '1.2'
+          }}>
+            {event.name}
+          </h1>
+          <p style={{
+            color: colors.textMuted,
+            fontSize: '16px',
+            marginBottom: '24px'
+          }}>
+            {new Date(event.date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </p>
+
+          {/* Scanner Info Card */}
+          <div style={{
+            background: colors.cardBg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '12px',
+            padding: '20px 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '16px'
+          }}>
+            <div>
+              <h3 style={{
+                fontSize: '16px',
+                fontWeight: '600',
+                color: colors.text,
+                marginBottom: '8px'
+              }}>
+                Scanner Access
+              </h3>
+              {event.scanner_pin ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '14px', color: colors.textMuted }}>
+                    PIN Required:
+                  </span>
+                  <code style={{
+                    background: colors.bg,
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: `1px solid ${colors.border}`,
+                    fontSize: '16px',
+                    fontFamily: 'monospace',
+                    color: colors.gold,
+                    fontWeight: '600'
+                  }}>
+                    {event.scanner_pin}
+                  </code>
+                </div>
+              ) : (
+                <p style={{ fontSize: '14px', color: colors.textMuted }}>
+                  No PIN required - scanner is open access
+                </p>
+              )}
+            </div>
+            <Link
+              href={`/scan/${event.id}`}
+              target="_blank"
+              style={{
+                background: colors.success,
+                color: colors.text,
+                padding: '12px 24px',
+                borderRadius: '10px',
+                fontSize: '15px',
+                fontWeight: '600',
+                textDecoration: 'none',
+                transition: 'all 0.2s ease',
+                display: 'inline-block'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#5a8d6a'
+                e.currentTarget.style.transform = 'translateY(-1px)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.success
+                e.currentTarget.style.transform = 'translateY(0)'
+              }}
+            >
+              Open Scanner
+            </Link>
+          </div>
         </div>
 
-        {/* Search Bar */}
+        {/* Stats */}
         <div style={{
-          marginTop: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: colors.bg,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '20px',
+          marginBottom: '32px'
+        }}>
+          <div style={{
+            background: colors.cardBg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <p style={{
+              fontSize: '14px',
+              color: colors.textMuted,
+              marginBottom: '8px',
+              fontWeight: '500'
+            }}>
+              Total Guests
+            </p>
+            <p style={{
+              fontSize: '32px',
+              fontWeight: '700',
+              color: colors.text
+            }}>
+              {totalCount}
+            </p>
+          </div>
+          <div style={{
+            background: colors.cardBg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <p style={{
+              fontSize: '14px',
+              color: colors.textMuted,
+              marginBottom: '8px',
+              fontWeight: '500'
+            }}>
+              Claimed
+            </p>
+            <p style={{
+              fontSize: '32px',
+              fontWeight: '700',
+              color: colors.gold
+            }}>
+              {claimedCount}
+            </p>
+          </div>
+          <div style={{
+            background: colors.cardBg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <p style={{
+              fontSize: '14px',
+              color: colors.textMuted,
+              marginBottom: '8px',
+              fontWeight: '500'
+            }}>
+              Awaiting
+            </p>
+            <p style={{
+              fontSize: '32px',
+              fontWeight: '700',
+              color: colors.textMuted
+            }}>
+              {totalCount - claimedCount}
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{
+          background: colors.cardBg,
           border: `1px solid ${colors.border}`,
           borderRadius: '12px',
-          padding: '10px 14px'
+          padding: '24px',
+          marginBottom: '32px'
         }}>
-          <Search size={18} color={colors.textMuted} />
-          <input
-            type="text"
-            placeholder="Search guests..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: colors.text,
-              fontSize: '15px'
-            }}
-          />
-        </div>
-
-        {/* Tabs */}
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          marginTop: '16px'
-        }}>
-          {['all', 'claimed', 'pending'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                background: activeTab === tab ? colors.gold : 'transparent',
-                color: activeTab === tab ? colors.bg : colors.textMuted,
-                border: activeTab === tab ? 'none' : `1px solid ${colors.border}`,
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                textTransform: 'capitalize',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {tab}
-              {tab !== 'all' && (
-                <span style={{ marginLeft: '6px', opacity: 0.7 }}>
-                  ({tab === 'claimed' ? claimedCount : totalGuests - claimedCount})
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Guest List */}
-      <div style={{ padding: '16px' }}>
-        {filteredGuests.length === 0 ? (
-          <div style={{
-            textAlign: 'center',
-            padding: '48px 24px',
-            color: colors.textMuted
+          <h2 style={{
+            fontSize: '18px',
+            fontWeight: '600',
+            color: colors.text,
+            marginBottom: '16px'
           }}>
-            <p style={{ fontSize: '16px', marginBottom: '8px' }}>No guests found</p>
-            <p style={{ fontSize: '14px' }}>Try adjusting your search or filter</p>
-          </div>
-        ) : (
-          filteredGuests.map((guest: any) => (
-            <div 
-              key={guest.id}
+            Guest List Actions
+          </h2>
+          
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            {/* Upload CSV Button - Charcoal Blue */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+            />
+            
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
               style={{
-                background: guest.claimed ? colors.successGlow : colors.cardBg,
-                border: `1px solid ${guest.claimed ? colors.success : colors.border}`,
-                borderLeft: guest.tier === 'VIP' ? `3px solid ${colors.gold}` : `3px solid ${colors.border}`,
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '12px',
-                transition: 'all 0.2s ease'
+                background: colors.charcoalBlue,
+                border: 'none',
+                color: colors.text,
+                padding: '12px 24px',
+                borderRadius: '10px',
+                fontSize: '15px',
+                fontWeight: '600',
+                cursor: uploading ? 'not-allowed' : 'pointer',
+                opacity: uploading ? 0.5 : 1,
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => {
+                if (!uploading) {
+                  e.currentTarget.style.background = '#283847'
+                  e.currentTarget.style.transform = 'translateY(-1px)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.charcoalBlue
+                e.currentTarget.style.transform = 'translateY(0)'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                {/* Status Icon */}
-                <div style={{ 
-                  marginTop: '2px',
-                  color: guest.claimed ? colors.gold : colors.textMuted 
-                }}>
-                  {guest.claimed ? <CheckCircle2 size={20} /> : <Circle size={20} />}
-                </div>
-                
-                {/* Guest Info */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '8px',
-                    marginBottom: '4px',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span style={{ 
-                      fontSize: '16px',
-                      fontWeight: '500',
-                      color: colors.text
-                    }}>{guest.name}</span>
-                    
-                    {guest.tier === 'VIP' && (
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        background: `${colors.gold}15`,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: colors.gold,
-                        letterSpacing: '0.5px'
-                      }}>
-                        <Crown size={12} />
-                        VIP
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div style={{ 
-                    fontSize: '13px',
-                    color: colors.textMuted,
-                    marginBottom: '4px'
-                  }}>
-                    {guest.email}
-                  </div>
-                  
-                  {guest.claimed && guest.claimed_at && (
-                    <div style={{ 
-                      fontSize: '12px',
-                      color: colors.gold,
-                      marginTop: '6px'
-                    }}>
-                      Claimed {new Date(guest.claimed_at).toLocaleTimeString('en-US', { 
-                        hour: 'numeric', 
-                        minute: '2-digit',
-                        hour12: true 
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+              <Upload size={18} />
+              {uploading ? 'Uploading...' : 'Upload CSV'}
+            </button>
 
-      {/* Floating Action Button - Scanner */}
-      <button
-        onClick={() => router.push(`/scan/${eventId}`)}
-        style={{
-          position: 'fixed',
-          bottom: '24px',
-          right: '24px',
-          width: '64px',
-          height: '64px',
-          borderRadius: '50%',
-          background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
-          border: 'none',
-          boxShadow: `0 8px 24px ${colors.gold}40`,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.3s ease',
-          zIndex: 100
-        }}
-      >
-        <Camera size={28} color={colors.bg} />
-      </button>
+            {/* Download All QR Codes Button - Charcoal Blue */}
+            {guests.length > 0 && (
+              <button
+                onClick={downloadAllQRCodes}
+                disabled={downloadingQR}
+                style={{
+                  background: colors.charcoalBlue,
+                  border: 'none',
+                  color: colors.text,
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: downloadingQR ? 'not-allowed' : 'pointer',
+                  opacity: downloadingQR ? 0.5 : 1,
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  if (!downloadingQR) {
+                    e.currentTarget.style.background = '#283847'
+                    e.currentTarget.style.transform = 'translateY(-1px)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.charcoalBlue
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                <Download size={18} />
+                {downloadingQR ? 'Creating ZIP...' : 'Download All QR Codes'}
+              </button>
+            )}
+          </div>
+
+          {uploadMessage && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              background: uploadMessage.includes('Error') ? '#3a1a1a' : colors.successBg,
+              color: uploadMessage.includes('Error') ? '#ff6b6b' : colors.gold,
+              border: `1px solid ${uploadMessage.includes('Error') ? '#5a2a2a' : colors.success}`
+            }}>
+              {uploadMessage}
+            </div>
+          )}
+        </div>
+
+        {/* Guest List */}
+        <div style={{
+          background: colors.cardBg,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '12px',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            padding: '24px',
+            borderBottom: `1px solid ${colors.border}`
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '16px',
+              flexWrap: 'wrap',
+              gap: '16px'
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: colors.text,
+                margin: 0
+              }}>
+                Guest List
+              </h2>
+            </div>
+            
+            {guests.length > 0 && (
+              <input
+                type="text"
+                placeholder="Search guests..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: colors.bg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '10px',
+                  color: colors.text,
+                  fontSize: '15px',
+                  outline: 'none'
+                }}
+              />
+            )}
+          </div>
+
+          {guests.length === 0 ? (
+            <div style={{
+              padding: '80px 24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+              <p style={{ color: colors.textMuted, fontSize: '15px' }}>
+                No guests yet. Upload a CSV file to get started.
+              </p>
+            </div>
+          ) : filteredGuests.length === 0 ? (
+            <div style={{
+              padding: '80px 24px',
+              textAlign: 'center'
+            }}>
+              <p style={{ color: colors.textMuted, fontSize: '15px' }}>
+                No guests match your search.
+              </p>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse'
+              }}>
+                <thead>
+                  <tr style={{
+                    background: colors.bg,
+                    borderBottom: `1px solid ${colors.border}`
+                  }}>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Name
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Status
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Tier
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      QR Code
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Email
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredGuests.map((guest) => (
+                    <tr
+                      key={guest.id}
+                      style={{
+                        borderBottom: `1px solid ${colors.border}`,
+                        transition: 'background 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = colors.bg}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <td style={{
+                        padding: '20px 24px'
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px'
+                        }}>
+                          {guest.tier.toLowerCase().includes('vip') && (
+                            <Crown size={16} style={{ color: colors.gold }} />
+                          )}
+                          <span style={{
+                            fontSize: '15px',
+                            fontWeight: '500',
+                            color: colors.text
+                          }}>
+                            {guest.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '20px 24px' }}>
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          background: guest.status === 'Claimed' ? colors.successBg : colors.bg,
+                          color: guest.status === 'Claimed' ? colors.gold : colors.textMuted,
+                          border: `1px solid ${guest.status === 'Claimed' ? colors.success : colors.border}`
+                        }}>
+                          {guest.status === 'Claimed' ? (
+                            <CheckCircle size={14} />
+                          ) : (
+                            <Circle size={14} />
+                          )}
+                          {guest.status === 'Claimed' ? 'Claimed' : 'Awaiting'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '20px 24px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          background: guest.tier.toLowerCase().includes('vip') ? `${colors.gold}15` : colors.bg,
+                          color: guest.tier.toLowerCase().includes('vip') ? colors.gold : colors.textMuted,
+                          border: `1px solid ${guest.tier.toLowerCase().includes('vip') ? `${colors.gold}30` : colors.border}`
+                        }}>
+                          {guest.tier}
+                        </span>
+                      </td>
+                      <td style={{ padding: '20px 24px' }}>
+                        <button
+                          onClick={() => downloadSingleQR(guest)}
+                          style={{
+                            background: 'transparent',
+                            border: `1px solid ${colors.border}`,
+                            color: colors.textMuted,
+                            padding: '8px 16px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = colors.gold
+                            e.currentTarget.style.color = colors.gold
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = colors.border
+                            e.currentTarget.style.color = colors.textMuted
+                          }}
+                        >
+                          Download
+                        </button>
+                      </td>
+                      <td style={{
+                        padding: '20px 24px',
+                        fontSize: '14px',
+                        color: colors.textMuted
+                      }}>
+                        {guest.email}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
-  );
+  )
 }
