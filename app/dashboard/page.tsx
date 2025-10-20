@@ -11,6 +11,8 @@ type Event = {
   name: string
   date: string
   scanner_pin: string | null
+  total_guests?: number
+  claimed_guests?: number
 }
 
 // Deep charcoal + gold color scheme
@@ -22,6 +24,30 @@ const colors = {
   gold: '#c9a961',
   goldLight: '#d4af6f',
   border: '#2a2a2a'
+}
+
+// Helper function to calculate countdown text
+function getCountdownText(eventDate: string): string {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const event = new Date(eventDate)
+  event.setHours(0, 0, 0, 0)
+
+  const diffTime = event.getTime() - today.getTime()
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) {
+    return 'Today!'
+  } else if (diffDays === 1) {
+    return 'Tomorrow'
+  } else if (diffDays === -1) {
+    return 'Yesterday'
+  } else if (diffDays > 0) {
+    return `In ${diffDays} days`
+  } else {
+    return `${Math.abs(diffDays)} days ago`
+  }
 }
 
 export default function DashboardPage() {
@@ -49,11 +75,49 @@ export default function DashboardPage() {
   const fetchEvents = async () => {
     const { data, error } = await supabase
       .from('events')
-      .select('*')
-      .order('date', { ascending: false })
-    
+      .select(`
+        *,
+        guests (
+          id,
+          status
+        )
+      `)
+      .order('date', { ascending: true })
+
     if (!error && data) {
-      setEvents(data)
+      // Calculate guest counts and sort by date proximity to today
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      const eventsWithCounts = data.map((event: any) => {
+        const guests = event.guests || []
+        const total_guests = guests.length
+        const claimed_guests = guests.filter((g: any) => g.status === 'Claimed').length
+
+        // Remove the guests array and add our counts
+        const { guests: _, ...eventWithoutGuests } = event
+
+        return {
+          ...eventWithoutGuests,
+          total_guests,
+          claimed_guests
+        }
+      })
+
+      // Sort by absolute distance from today (closest first)
+      eventsWithCounts.sort((a, b) => {
+        const dateA = new Date(a.date)
+        const dateB = new Date(b.date)
+        dateA.setHours(0, 0, 0, 0)
+        dateB.setHours(0, 0, 0, 0)
+
+        const diffA = Math.abs(dateA.getTime() - today.getTime())
+        const diffB = Math.abs(dateB.getTime() - today.getTime())
+
+        return diffA - diffB
+      })
+
+      setEvents(eventsWithCounts)
     }
   }
 
@@ -327,6 +391,16 @@ export default function DashboardPage() {
                   {event.name}
                 </h3>
 
+                {/* Countdown */}
+                <div style={{
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  color: colors.gold,
+                  marginBottom: '8px'
+                }}>
+                  {getCountdownText(event.date)}
+                </div>
+
                 {/* Event date */}
                 <p style={{
                   color: colors.textMuted,
@@ -341,6 +415,45 @@ export default function DashboardPage() {
                   })}
                 </p>
 
+                {/* Guest stats */}
+                <div style={{
+                  display: 'flex',
+                  gap: '16px',
+                  marginBottom: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  {event.total_guests !== undefined && event.total_guests > 0 ? (
+                    <>
+                      <div style={{
+                        fontSize: '14px',
+                        color: colors.textMuted
+                      }}>
+                        <span style={{ fontWeight: '600', color: colors.text }}>
+                          {event.total_guests}
+                        </span>
+                        {' '}guest{event.total_guests !== 1 ? 's' : ''}
+                      </div>
+                      <div style={{
+                        fontSize: '14px',
+                        color: colors.textMuted
+                      }}>
+                        <span style={{ fontWeight: '600', color: colors.gold }}>
+                          {event.claimed_guests || 0}/{event.total_guests}
+                        </span>
+                        {' '}claimed
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{
+                      fontSize: '14px',
+                      color: colors.textMuted,
+                      fontStyle: 'italic'
+                    }}>
+                      No guests yet
+                    </div>
+                  )}
+                </div>
+
                 {/* PIN indicator */}
                 {event.scanner_pin && (
                   <div style={{
@@ -350,8 +463,7 @@ export default function DashboardPage() {
                     padding: '4px 12px',
                     borderRadius: '6px',
                     fontSize: '12px',
-                    fontWeight: '600',
-                    marginTop: '8px'
+                    fontWeight: '600'
                   }}>
                     🔒 Protected
                   </div>
