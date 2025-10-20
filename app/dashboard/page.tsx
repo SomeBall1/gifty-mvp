@@ -10,6 +10,8 @@ type Event = {
   id: string
   name: string
   date: string
+  start_time: string | null
+  location: string | null
   scanner_pin: string | null
   total_guests?: number
   claimed_guests?: number
@@ -55,8 +57,12 @@ export default function DashboardPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newEventName, setNewEventName] = useState('')
   const [newEventDate, setNewEventDate] = useState('')
+  const [newEventTime, setNewEventTime] = useState('')
+  const [newEventLocation, setNewEventLocation] = useState('')
   const [newEventPin, setNewEventPin] = useState('')
   const [creating, setCreating] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [eventToDelete, setEventToDelete] = useState<{ id: string; name: string } | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -131,7 +137,7 @@ export default function DashboardPage() {
     setCreating(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       alert('You must be logged in')
       setCreating(false)
@@ -145,6 +151,8 @@ export default function DashboardPage() {
           user_id: user.id,
           name: newEventName,
           date: newEventDate,
+          start_time: newEventTime || null,
+          location: newEventLocation || null,
           scanner_pin: newEventPin || null
         }
       ])
@@ -155,6 +163,8 @@ export default function DashboardPage() {
       setShowCreateModal(false)
       setNewEventName('')
       setNewEventDate('')
+      setNewEventTime('')
+      setNewEventLocation('')
       setNewEventPin('')
       fetchEvents()
     }
@@ -162,22 +172,27 @@ export default function DashboardPage() {
     setCreating(false)
   }
 
-  const handleDeleteEvent = async (e: React.MouseEvent, eventId: string, eventName: string) => {
+  const handleDeleteEvent = (e: React.MouseEvent, eventId: string, eventName: string) => {
     e.preventDefault() // Prevent card click
     e.stopPropagation() // Stop event bubbling
-    
-    if (!confirm(`Are you sure you want to delete "${eventName}"? This will also delete all guests and cannot be undone.`)) {
-      return
-    }
+
+    setEventToDelete({ id: eventId, name: eventName })
+    setShowDeleteModal(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!eventToDelete) return
 
     // First delete all guests for this event
     const { error: guestsError } = await supabase
       .from('guests')
       .delete()
-      .eq('event_id', eventId)
+      .eq('event_id', eventToDelete.id)
 
     if (guestsError) {
       alert('Error deleting guests: ' + guestsError.message)
+      setShowDeleteModal(false)
+      setEventToDelete(null)
       return
     }
 
@@ -185,15 +200,24 @@ export default function DashboardPage() {
     const { error: eventError } = await supabase
       .from('events')
       .delete()
-      .eq('id', eventId)
+      .eq('id', eventToDelete.id)
 
     if (eventError) {
       alert('Error deleting event: ' + eventError.message)
+      setShowDeleteModal(false)
+      setEventToDelete(null)
       return
     }
 
     // Refresh the events list
+    setShowDeleteModal(false)
+    setEventToDelete(null)
     fetchEvents()
+  }
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false)
+    setEventToDelete(null)
   }
 
   return (
@@ -532,6 +556,63 @@ export default function DashboardPage() {
                 />
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    Event Date
+                  </label>
+                  <input
+                    type="date"
+                    value={newEventDate}
+                    onChange={(e) => setNewEventDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      background: colors.bg,
+                      color: colors.text,
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    Start Time (Optional)
+                  </label>
+                  <input
+                    type="time"
+                    value={newEventTime}
+                    onChange={(e) => setNewEventTime(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      background: colors.bg,
+                      color: colors.text,
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label style={{
                   display: 'block',
@@ -540,12 +621,12 @@ export default function DashboardPage() {
                   color: colors.text,
                   marginBottom: '8px'
                 }}>
-                  Event Date
+                  Location (Optional)
                 </label>
                 <input
-                  type="date"
-                  value={newEventDate}
-                  onChange={(e) => setNewEventDate(e.target.value)}
+                  type="text"
+                  value={newEventLocation}
+                  onChange={(e) => setNewEventLocation(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '12px 16px',
@@ -556,7 +637,7 @@ export default function DashboardPage() {
                     fontSize: '15px',
                     outline: 'none'
                   }}
-                  required
+                  placeholder="e.g., Grand Ballroom, Hotel Luxe"
                 />
               </div>
 
@@ -634,6 +715,102 @@ export default function DashboardPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && eventToDelete && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: colors.cardBg,
+            borderRadius: '16px',
+            padding: '32px',
+            maxWidth: '450px',
+            width: '100%',
+            border: `1px solid ${colors.border}`
+          }}>
+            <h3 style={{
+              fontSize: '24px',
+              fontWeight: '700',
+              color: colors.text,
+              marginBottom: '16px'
+            }}>
+              Delete Event?
+            </h3>
+            <p style={{
+              color: colors.textMuted,
+              fontSize: '15px',
+              marginBottom: '8px',
+              lineHeight: '1.6'
+            }}>
+              Are you sure you want to delete <span style={{ color: colors.text, fontWeight: '600' }}>"{eventToDelete.name}"</span>?
+            </p>
+            <p style={{
+              color: colors.textMuted,
+              fontSize: '15px',
+              marginBottom: '24px',
+              lineHeight: '1.6'
+            }}>
+              This will also delete all guests and cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={cancelDelete}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  background: 'transparent',
+                  color: colors.text,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bg
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  flex: 1,
+                  background: '#8b7474',
+                  color: colors.text,
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#9d8585'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#8b7474'
+                }}
+              >
+                Delete Event
+              </button>
+            </div>
           </div>
         </div>
       )}

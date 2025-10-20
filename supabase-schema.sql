@@ -14,6 +14,8 @@ CREATE TABLE events (
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
   date DATE NOT NULL,
+  start_time TIME,
+  location TEXT,
   scanner_pin TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
