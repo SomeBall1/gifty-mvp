@@ -10,6 +10,14 @@ Bub and Bubble both have zero prior experience with coding. Act accordingly, pro
 They use Windows and Android.
 Feel free to give multi-step instructions. Bubble will let you know when he's stuck.
 
+## Git Commit Workflow
+
+When you complete a feature, fix, or improvement:
+1. Automatically create a git commit to main without asking for permission
+2. Use clear, concise commit messages that describe the "why" not just the "what"
+3. Follow the standard commit format with co-author attribution
+4. Bubble will review commits in GitHub Desktop and can amend/revert if needed
+
 ## Project Overview
 
 Gifty is a VIP goodie bag verification system for exclusive events. It enables event organizers to manage guest lists, generate QR codes, send email invitations, and verify guests in real-time using mobile scanners.

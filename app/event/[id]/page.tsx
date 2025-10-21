@@ -434,75 +434,84 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Stats - Compact */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '20px',
-          marginBottom: '32px'
+          background: colors.cardBg,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '32px',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          gap: '16px'
         }}>
-          <div style={{
-            background: colors.cardBg,
-            border: `1px solid ${colors.border}`,
-            borderRadius: '12px',
-            padding: '24px'
-          }}>
+          <div style={{ textAlign: 'center' }}>
             <p style={{
-              fontSize: '14px',
+              fontSize: '12px',
               color: colors.textMuted,
-              marginBottom: '8px',
-              fontWeight: '500'
+              marginBottom: '4px',
+              fontWeight: '500',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
             }}>
-              Total Guests
+              Total
             </p>
             <p style={{
-              fontSize: '32px',
+              fontSize: '28px',
               fontWeight: '700',
-              color: colors.text
+              color: colors.text,
+              lineHeight: '1'
             }}>
               {totalCount}
             </p>
           </div>
           <div style={{
-            background: colors.cardBg,
-            border: `1px solid ${colors.border}`,
-            borderRadius: '12px',
-            padding: '24px'
-          }}>
+            width: '1px',
+            height: '40px',
+            background: colors.border
+          }} />
+          <div style={{ textAlign: 'center' }}>
             <p style={{
-              fontSize: '14px',
+              fontSize: '12px',
               color: colors.textMuted,
-              marginBottom: '8px',
-              fontWeight: '500'
+              marginBottom: '4px',
+              fontWeight: '500',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
             }}>
               Claimed
             </p>
             <p style={{
-              fontSize: '32px',
+              fontSize: '28px',
               fontWeight: '700',
-              color: colors.gold
+              color: colors.gold,
+              lineHeight: '1'
             }}>
               {claimedCount}
             </p>
           </div>
           <div style={{
-            background: colors.cardBg,
-            border: `1px solid ${colors.border}`,
-            borderRadius: '12px',
-            padding: '24px'
-          }}>
+            width: '1px',
+            height: '40px',
+            background: colors.border
+          }} />
+          <div style={{ textAlign: 'center' }}>
             <p style={{
-              fontSize: '14px',
+              fontSize: '12px',
               color: colors.textMuted,
-              marginBottom: '8px',
-              fontWeight: '500'
+              marginBottom: '4px',
+              fontWeight: '500',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
             }}>
               Awaiting
             </p>
             <p style={{
-              fontSize: '32px',
+              fontSize: '28px',
               fontWeight: '700',
-              color: colors.textMuted
+              color: colors.textMuted,
+              lineHeight: '1'
             }}>
               {totalCount - claimedCount}
             </p>
