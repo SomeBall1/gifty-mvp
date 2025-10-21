@@ -21,6 +21,8 @@ interface Event {
   id: string
   name: string
   date: string
+  start_time: string | null
+  location: string | null
   scanner_pin: string | null
 }
 
@@ -328,7 +330,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           <p style={{
             color: colors.textMuted,
             fontSize: '16px',
-            marginBottom: '24px'
+            marginBottom: '8px'
           }}>
             {new Date(event.date).toLocaleDateString('en-US', {
               weekday: 'long',
@@ -337,6 +339,27 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               day: 'numeric'
             })}
           </p>
+
+          {/* Start time and location */}
+          <div style={{
+            fontSize: '15px',
+            color: colors.textMuted,
+            marginBottom: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px'
+          }}>
+            {event.start_time && (
+              <div>
+                <span style={{ color: colors.gold }}>⏰</span> {event.start_time}
+              </div>
+            )}
+            {event.location && (
+              <div>
+                <span style={{ color: colors.gold }}>📍</span> {event.location}
+              </div>
+            )}
+          </div>
 
           {/* Scanner Info Card */}
           <div style={{

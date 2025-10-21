@@ -110,17 +110,23 @@ export default function DashboardPage() {
         }
       })
 
-      // Sort by absolute distance from today (closest first)
+      // Sort by date: upcoming events first (soonest to latest), then past events (most recent to oldest)
       eventsWithCounts.sort((a, b) => {
         const dateA = new Date(a.date)
         const dateB = new Date(b.date)
         dateA.setHours(0, 0, 0, 0)
         dateB.setHours(0, 0, 0, 0)
 
-        const diffA = Math.abs(dateA.getTime() - today.getTime())
-        const diffB = Math.abs(dateB.getTime() - today.getTime())
+        const diffA = dateA.getTime() - today.getTime()
+        const diffB = dateB.getTime() - today.getTime()
 
-        return diffA - diffB
+        // Both future or both past: sort by date
+        if ((diffA >= 0 && diffB >= 0) || (diffA < 0 && diffB < 0)) {
+          return diffA - diffB
+        }
+
+        // One future, one past: future comes first
+        return diffB - diffA
       })
 
       setEvents(eventsWithCounts)
@@ -429,7 +435,7 @@ export default function DashboardPage() {
                 <p style={{
                   color: colors.textMuted,
                   fontSize: '14px',
-                  marginBottom: '16px'
+                  marginBottom: '4px'
                 }}>
                   {new Date(event.date).toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -438,6 +444,27 @@ export default function DashboardPage() {
                     day: 'numeric'
                   })}
                 </p>
+
+                {/* Start time and location */}
+                <div style={{
+                  fontSize: '14px',
+                  color: colors.textMuted,
+                  marginBottom: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px'
+                }}>
+                  {event.start_time && (
+                    <div>
+                      <span style={{ color: colors.gold }}>⏰</span> {event.start_time}
+                    </div>
+                  )}
+                  {event.location && (
+                    <div>
+                      <span style={{ color: colors.gold }}>📍</span> {event.location}
+                    </div>
+                  )}
+                </div>
 
                 {/* Guest stats */}
                 <div style={{
