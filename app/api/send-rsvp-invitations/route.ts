@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { eventId, fromEmail = 'onboarding@resend.dev' } = await request.json()
+    const { eventId, guestIds, fromEmail = 'onboarding@resend.dev' } = await request.json()
 
     if (!eventId) {
       return NextResponse.json(
@@ -43,12 +43,19 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch all pending RSVP guests for this event
-    const { data: guests, error: guestsError } = await supabase
+    // Fetch guests - either specific IDs or all pending RSVP
+    let guestsQuery = supabase
       .from('guests')
       .select('*')
       .eq('event_id', eventId)
-      .eq('rsvp_status', 'Pending')
+
+    if (guestIds && Array.isArray(guestIds) && guestIds.length > 0) {
+      guestsQuery = guestsQuery.in('id', guestIds)
+    } else {
+      guestsQuery = guestsQuery.eq('rsvp_status', 'Pending')
+    }
+
+    const { data: guests, error: guestsError } = await guestsQuery
 
     if (guestsError) {
       return NextResponse.json(

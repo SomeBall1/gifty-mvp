@@ -1,21 +1,27 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import QRCode from 'qrcode'
 import { qrInvitationTemplate } from '@/lib/email/templates'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-const resend = process.env.RESEND_API_KEY 
+const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null
 
 export async function POST(request: Request) {
   try {
-    const { eventId, fromEmail = 'onboarding@resend.dev' } = await request.json()
+    const supabase = createServerSupabaseClient()
+
+    // Check authentication
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { eventId, guestIds, fromEmail = 'onboarding@resend.dev' } = await request.json()
 
     if (!eventId) {
       return NextResponse.json(
@@ -24,7 +30,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch event details
+    // Fetch event details (RLS ensures user owns this event)
     const { data: event, error: eventError } = await supabase
       .from('events')
       .select('*')
@@ -38,12 +44,19 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch all unclaimed guests for this event
-    const { data: guests, error: guestsError } = await supabase
+    // Fetch guests - either specific IDs or all unclaimed
+    let guestsQuery = supabase
       .from('guests')
       .select('*')
       .eq('event_id', eventId)
-      .eq('status', 'Not Claimed')
+
+    if (guestIds && Array.isArray(guestIds) && guestIds.length > 0) {
+      guestsQuery = guestsQuery.in('id', guestIds)
+    } else {
+      guestsQuery = guestsQuery.eq('status', 'Not Claimed')
+    }
+
+    const { data: guests, error: guestsError } = await guestsQuery
 
     if (guestsError) {
       return NextResponse.json(

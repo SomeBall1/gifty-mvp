@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Mail, AlertCircle, CheckCircle, Clock, ExternalLink } from 'lucide-react'
 
 interface Guest {
@@ -65,13 +65,51 @@ export default function EmailInvitationModal({
   const [sending, setSending] = useState(false)
   const [sendProgress, setSendProgress] = useState(0)
   const [results, setResults] = useState<EmailResult[]>([])
+  const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set())
 
   const isTestMode = fromEmail === 'onboarding@resend.dev'
   const invitationTypeLabel = invitationType === 'rsvp' ? 'RSVP Invitation' : 'QR Code Invitation'
   const successCount = results.filter(r => r.success).length
   const failedCount = results.filter(r => !r.success).length
+  const allSelected = selectedRecipients.size === recipients.length && recipients.length > 0
+  const someSelected = selectedRecipients.size > 0 && selectedRecipients.size < recipients.length
+
+  // Initialize all recipients as selected when modal opens
+  useEffect(() => {
+    if (isOpen && recipients.length > 0) {
+      setSelectedRecipients(new Set(recipients.map(r => r.id)))
+    }
+  }, [isOpen, recipients])
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedRecipients(new Set())
+    } else {
+      setSelectedRecipients(new Set(recipients.map(r => r.id)))
+    }
+  }
+
+  const toggleRecipient = (recipientId: string) => {
+    const newSelected = new Set(selectedRecipients)
+    if (newSelected.has(recipientId)) {
+      newSelected.delete(recipientId)
+    } else {
+      newSelected.add(recipientId)
+    }
+    setSelectedRecipients(newSelected)
+  }
+
+  const getSelectedRecipients = () => {
+    return recipients.filter(r => selectedRecipients.has(r.id))
+  }
 
   const handleSend = async () => {
+    const recipientsToSend = getSelectedRecipients()
+
+    if (recipientsToSend.length === 0) {
+      alert('Please select at least one recipient')
+      return
+    }
     setSending(true)
     setStep('sending')
     setSendProgress(0)
@@ -88,6 +126,7 @@ export default function EmailInvitationModal({
         },
         body: JSON.stringify({
           eventId,
+          guestIds: Array.from(selectedRecipients),
           fromEmail
         })
       })
@@ -95,7 +134,11 @@ export default function EmailInvitationModal({
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to send invitations')
+        // Special handling for API key error
+        if (data.error?.includes('API key not configured') || data.details?.includes('API key not configured')) {
+          throw new Error('Resend API key is not configured. Please add RESEND_API_KEY to your environment variables (.env.local or Vercel settings).')
+        }
+        throw new Error(data.error || data.details || 'Failed to send invitations')
       }
 
       // Simulate progress for better UX
@@ -108,7 +151,7 @@ export default function EmailInvitationModal({
       }
     } catch (error: any) {
       console.error('Error sending invitations:', error)
-      alert(`Error: ${error.message}`)
+      alert(`❌ Error: ${error.message}`)
       setStep('confirm')
     } finally {
       setSending(false)
@@ -277,14 +320,45 @@ export default function EmailInvitationModal({
 
             {/* Recipients List */}
             <div>
-              <h3 style={{
-                fontSize: '16px',
-                fontWeight: '600',
-                color: colors.text,
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 marginBottom: '12px'
               }}>
-                Recipients ({recipients.length})
-              </h3>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  margin: 0
+                }}>
+                  Recipients ({selectedRecipients.size} of {recipients.length} selected)
+                </h3>
+                <button
+                  onClick={toggleSelectAll}
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid ${colors.border}`,
+                    color: colors.gold,
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.gold
+                    e.currentTarget.style.background = `${colors.gold}10`
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.border
+                    e.currentTarget.style.background = 'transparent'
+                  }}
+                >
+                  {allSelected ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
               <div style={{
                 background: colors.bg,
                 border: `1px solid ${colors.border}`,
@@ -292,55 +366,83 @@ export default function EmailInvitationModal({
                 maxHeight: '300px',
                 overflowY: 'auto'
               }}>
-                {recipients.map((recipient, index) => (
-                  <div
-                    key={recipient.id}
-                    style={{
-                      padding: '12px 16px',
-                      borderBottom: index < recipients.length - 1 ? `1px solid ${colors.border}` : 'none',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{
-                        margin: 0,
-                        color: colors.text,
-                        fontSize: '14px',
+                {recipients.map((recipient, index) => {
+                  const isSelected = selectedRecipients.has(recipient.id)
+                  return (
+                    <div
+                      key={recipient.id}
+                      onClick={() => toggleRecipient(recipient.id)}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: index < recipients.length - 1 ? `1px solid ${colors.border}` : 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '12px',
+                        cursor: 'pointer',
+                        background: isSelected ? `${colors.gold}05` : 'transparent',
+                        transition: 'background 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.background = `${colors.border}50`
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isSelected ? `${colors.gold}05` : 'transparent'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleRecipient(recipient.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          cursor: 'pointer',
+                          accentColor: colors.gold,
+                          flexShrink: 0
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{
+                          margin: 0,
+                          color: isSelected ? colors.text : colors.textMuted,
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {recipient.name}
+                        </p>
+                        <p style={{
+                          margin: 0,
+                          color: colors.textMuted,
+                          fontSize: '13px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {isTestMode ? 'onboarding@resend.dev' : recipient.email}
+                        </p>
+                      </div>
+                      <span style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
                         fontWeight: '500',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
+                        background: recipient.tier.toLowerCase().includes('vip') ? `${colors.gold}15` : colors.cardBg,
+                        color: recipient.tier.toLowerCase().includes('vip') ? colors.gold : colors.textMuted,
+                        border: `1px solid ${recipient.tier.toLowerCase().includes('vip') ? `${colors.gold}30` : colors.border}`,
+                        flexShrink: 0
                       }}>
-                        {recipient.name}
-                      </p>
-                      <p style={{
-                        margin: 0,
-                        color: colors.textMuted,
-                        fontSize: '13px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {isTestMode ? 'onboarding@resend.dev' : recipient.email}
-                      </p>
+                        {recipient.tier}
+                      </span>
                     </div>
-                    <span style={{
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      background: recipient.tier.toLowerCase().includes('vip') ? `${colors.gold}15` : colors.cardBg,
-                      color: recipient.tier.toLowerCase().includes('vip') ? colors.gold : colors.textMuted,
-                      border: `1px solid ${recipient.tier.toLowerCase().includes('vip') ? `${colors.gold}30` : colors.border}`,
-                      flexShrink: 0
-                    }}>
-                      {recipient.tier}
-                    </span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
@@ -352,23 +454,98 @@ export default function EmailInvitationModal({
               padding: '16px'
             }}>
               <p style={{
-                margin: '0 0 8px',
+                margin: '0 0 12px',
                 color: colors.text,
                 fontSize: '14px',
                 fontWeight: '600'
               }}>
-                📧 Email Content
+                📧 Email Preview
               </p>
-              <p style={{
-                margin: 0,
-                color: colors.textMuted,
-                fontSize: '13px',
-                lineHeight: '1.6'
-              }}>
-                {invitationType === 'rsvp'
-                  ? 'Recipients will receive a professional RSVP invitation with Yes/No buttons to confirm their attendance.'
-                  : 'Recipients will receive their personalized QR code embedded in the email, ready to show at the event.'}
-              </p>
+
+              {invitationType === 'rsvp' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{
+                    background: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    padding: '12px',
+                    fontSize: '13px',
+                    color: colors.textMuted,
+                    lineHeight: '1.6'
+                  }}>
+                    <p style={{ margin: '0 0 8px', color: colors.text, fontWeight: '600' }}>
+                      Subject: You're Invited to {eventName} - Please RSVP
+                    </p>
+                    <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '8px', marginTop: '8px' }}>
+                      <p style={{ margin: '0 0 8px' }}>Dear <strong>[Guest Name]</strong>,</p>
+                      <p style={{ margin: '0 0 8px' }}>We're delighted to invite you to:</p>
+                      <div style={{ background: colors.bg, padding: '10px', borderRadius: '6px', margin: '8px 0' }}>
+                        <p style={{ margin: '0 0 4px', fontWeight: '600', color: colors.gold }}>{eventName}</p>
+                        <p style={{ margin: '0 0 4px' }}>📅 {eventDate}</p>
+                        {eventLocation && <p style={{ margin: 0 }}>📍 {eventLocation}</p>}
+                      </div>
+                      <p style={{ margin: '8px 0', fontWeight: '600', color: colors.text }}>Will you be joining us?</p>
+                      <div style={{ display: 'flex', gap: '8px', margin: '8px 0' }}>
+                        <span style={{ background: colors.gold, color: colors.bg, padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' }}>
+                          ✓ Yes, I'll Attend
+                        </span>
+                        <span style={{ background: 'transparent', border: `1px solid ${colors.border}`, color: colors.textMuted, padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
+                          ✗ Can't Make It
+                        </span>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '12px' }}>After confirming, you'll receive your exclusive QR code invitation via email.</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{
+                    background: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    padding: '12px',
+                    fontSize: '13px',
+                    color: colors.textMuted,
+                    lineHeight: '1.6'
+                  }}>
+                    <p style={{ margin: '0 0 8px', color: colors.text, fontWeight: '600' }}>
+                      Subject: Your Invitation to {eventName}
+                    </p>
+                    <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '8px', marginTop: '8px' }}>
+                      <p style={{ margin: '0 0 8px' }}>Dear <strong>[Guest Name]</strong>,</p>
+                      <p style={{ margin: '0 0 8px' }}>We're delighted to invite you to:</p>
+                      <div style={{ background: colors.bg, padding: '10px', borderRadius: '6px', margin: '8px 0' }}>
+                        <p style={{ margin: '0 0 4px', fontWeight: '600', color: colors.gold }}>{eventName}</p>
+                        <p style={{ margin: 0 }}>📅 {eventDate}</p>
+                      </div>
+                      <p style={{ margin: '8px 0', fontWeight: '600', color: colors.text }}>Please present this QR code at the event exit to receive your exclusive goodie bag:</p>
+                      <div style={{
+                        background: '#ffffff',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        margin: '8px 0',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{
+                          width: '120px',
+                          height: '120px',
+                          background: colors.border,
+                          margin: '0 auto',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '11px',
+                          color: colors.textMuted
+                        }}>
+                          [QR Code]
+                        </div>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '12px' }}>Save this email or take a screenshot for easy access. Each code can only be used once.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -379,25 +556,29 @@ export default function EmailInvitationModal({
             }}>
               <button
                 onClick={handleSend}
+                disabled={selectedRecipients.size === 0}
                 style={{
                   flex: 1,
-                  background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
+                  background: selectedRecipients.size === 0 ? colors.border : `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100())`,
                   border: 'none',
-                  color: colors.bg,
+                  color: selectedRecipients.size === 0 ? colors.textMuted : colors.bg,
                   padding: '14px 24px',
                   borderRadius: '10px',
                   fontSize: '16px',
                   fontWeight: '700',
-                  cursor: 'pointer',
+                  cursor: selectedRecipients.size === 0 ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px'
+                  gap: '8px',
+                  opacity: selectedRecipients.size === 0 ? 0.5 : 1
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-1px)'
-                  e.currentTarget.style.boxShadow = `0 6px 16px ${colors.gold}40`
+                  if (selectedRecipients.size > 0) {
+                    e.currentTarget.style.transform = 'translateY(-1px)'
+                    e.currentTarget.style.boxShadow = `0 6px 16px ${colors.gold}40`
+                  }
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)'
@@ -405,7 +586,7 @@ export default function EmailInvitationModal({
                 }}
               >
                 <Mail size={18} />
-                Send {recipients.length} Email{recipients.length !== 1 ? 's' : ''}
+                Send {selectedRecipients.size} Email{selectedRecipients.size !== 1 ? 's' : ''}
               </button>
               <button
                 onClick={handleClose}
