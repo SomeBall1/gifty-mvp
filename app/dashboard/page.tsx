@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
+import { X, Clock, MapPin } from 'lucide-react'
 
 type Event = {
   id: string
@@ -455,13 +455,15 @@ export default function DashboardPage() {
                   gap: '2px'
                 }}>
                   {event.start_time && (
-                    <div>
-                      <span style={{ color: colors.gold }}>⏰</span> {event.start_time}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={14} style={{ color: colors.gold }} />
+                      {event.start_time}
                     </div>
                   )}
                   {event.location && (
-                    <div>
-                      <span style={{ color: colors.gold }}>📍</span> {event.location}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <MapPin size={14} style={{ color: colors.gold }} />
+                      {event.location}
                     </div>
                   )}
                 </div>
@@ -626,6 +628,7 @@ export default function DashboardPage() {
                     type="time"
                     value={newEventTime}
                     onChange={(e) => setNewEventTime(e.target.value)}
+                    step="60"
                     style={{
                       width: '100%',
                       padding: '12px 16px',

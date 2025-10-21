@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import QRCode from 'qrcode'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown } from 'lucide-react'
+import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin } from 'lucide-react'
 
 interface Guest {
   id: string
@@ -350,13 +350,15 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             gap: '4px'
           }}>
             {event.start_time && (
-              <div>
-                <span style={{ color: colors.gold }}>⏰</span> {event.start_time}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={16} style={{ color: colors.gold }} />
+                {event.start_time}
               </div>
             )}
             {event.location && (
-              <div>
-                <span style={{ color: colors.gold }}>📍</span> {event.location}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MapPin size={16} style={{ color: colors.gold }} />
+                {event.location}
               </div>
             )}
           </div>
