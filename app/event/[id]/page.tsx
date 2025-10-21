@@ -27,6 +27,8 @@ interface Event {
   start_time: string | null
   location: string | null
   scanner_pin: string | null
+  logo_url: string | null
+  show_powered_by: boolean
 }
 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
@@ -51,8 +53,12 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     date: '',
     start_time: '',
     location: '',
-    scanner_pin: ''
+    scanner_pin: '',
+    show_powered_by: true
   })
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [savingEvent, setSavingEvent] = useState(false)
   const [editMessage, setEditMessage] = useState('')
   const [isAddingGuest, setIsAddingGuest] = useState(false)
@@ -334,10 +340,69 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       date: event.date,
       start_time: event.start_time || '',
       location: event.location || '',
-      scanner_pin: event.scanner_pin || ''
+      scanner_pin: event.scanner_pin || '',
+      show_powered_by: event.show_powered_by
     })
+    setLogoPreview(event.logo_url)
+    setLogoFile(null)
     setIsEditingEvent(true)
     setEditMessage('')
+  }
+
+  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image must be less than 2MB')
+      return
+    }
+
+    setLogoFile(file)
+
+    // Create preview
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      setLogoPreview(e.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const uploadLogo = async (): Promise<string | null> => {
+    if (!logoFile) return event?.logo_url || null
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      const fileExt = logoFile.name.split('.').pop()
+      const fileName = `${session.user.id}/${event?.id}.${fileExt}`
+
+      const { data, error } = await supabase.storage
+        .from('event-logos')
+        .upload(fileName, logoFile, {
+          cacheControl: '3600',
+          upsert: true
+        })
+
+      if (error) throw error
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('event-logos')
+        .getPublicUrl(fileName)
+
+      return publicUrl
+    } catch (error: any) {
+      console.error('Error uploading logo:', error)
+      throw new Error(`Failed to upload logo: ${error.message}`)
+    }
   }
 
   const handleSaveEvent = async () => {
@@ -347,6 +412,21 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     setEditMessage('')
 
     try {
+      // Upload logo if a new one was selected
+      let logoUrl = event.logo_url
+      if (logoFile) {
+        setUploadingLogo(true)
+        try {
+          logoUrl = await uploadLogo()
+        } catch (error: any) {
+          setEditMessage(error.message)
+          setSavingEvent(false)
+          setUploadingLogo(false)
+          return
+        }
+        setUploadingLogo(false)
+      }
+
       const response = await fetch('/api/update-event', {
         method: 'POST',
         headers: {
@@ -358,7 +438,9 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           date: editForm.date,
           start_time: editForm.start_time || null,
           location: editForm.location || null,
-          scanner_pin: editForm.scanner_pin || null
+          scanner_pin: editForm.scanner_pin || null,
+          logo_url: logoUrl,
+          show_powered_by: editForm.show_powered_by
         })
       })
 
@@ -374,6 +456,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       setEvent(data.event)
       setIsEditingEvent(false)
       setEditMessage('')
+      setLogoFile(null)
     } catch (error) {
       console.error('Error updating event:', error)
       setEditMessage('Failed to update event. Please try again.')
@@ -590,6 +673,24 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       }}>
         {/* Event Info */}
         <div style={{ marginBottom: '40px' }}>
+          {/* Event Logo */}
+          {event.logo_url && (
+            <div style={{
+              marginBottom: '24px',
+              textAlign: 'center'
+            }}>
+              <img
+                src={event.logo_url}
+                alt={event.name}
+                style={{
+                  maxWidth: '300px',
+                  maxHeight: '150px',
+                  objectFit: 'contain'
+                }}
+              />
+            </div>
+          )}
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -2205,6 +2306,107 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 </p>
               </div>
 
+              {/* Event Logo */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Event Logo (optional)
+                </label>
+
+                {logoPreview && (
+                  <div style={{
+                    marginBottom: '12px',
+                    padding: '16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    textAlign: 'center'
+                  }}>
+                    <img
+                      src={logoPreview}
+                      alt="Event logo preview"
+                      style={{
+                        maxWidth: '200px',
+                        maxHeight: '120px',
+                        objectFit: 'contain'
+                      }}
+                    />
+                  </div>
+                )}
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoSelect}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+                <p style={{
+                  fontSize: '13px',
+                  color: colors.textMuted,
+                  marginTop: '6px'
+                }}>
+                  Max 2MB. Recommended: 400x200px
+                </p>
+              </div>
+
+              {/* Powered by Gifty Toggle */}
+              <div style={{
+                padding: '16px',
+                background: colors.bg,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '10px'
+              }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  gap: '12px'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.show_powered_by}
+                    onChange={(e) => setEditForm({ ...editForm, show_powered_by: e.target.checked })}
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      cursor: 'pointer'
+                    }}
+                  />
+                  <div>
+                    <span style={{
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: colors.text
+                    }}>
+                      Show "Powered by Gifty"
+                    </span>
+                    <p style={{
+                      fontSize: '13px',
+                      color: colors.textMuted,
+                      marginTop: '4px',
+                      margin: 0
+                    }}>
+                      Display a small watermark supporting Gifty (can be removed with premium)
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               {/* Error Message */}
               {editMessage && (
                 <div style={{
@@ -2250,7 +2452,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                     e.currentTarget.style.background = colors.success
                   }}
                 >
-                  {savingEvent ? 'Saving...' : 'Save Changes'}
+                  {uploadingLogo ? 'Uploading Logo...' : savingEvent ? 'Saving...' : 'Save Changes'}
                 </button>
                 <button
                   onClick={handleCancelEdit}
@@ -2284,6 +2486,37 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Powered by Gifty Watermark */}
+      {event?.show_powered_by && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          padding: '8px 16px',
+          background: `${colors.cardBg}dd`,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '20px',
+          backdropFilter: 'blur(10px)',
+          fontSize: '12px',
+          color: colors.textMuted,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          zIndex: 100
+        }}>
+          <span>Powered by</span>
+          <span style={{
+            fontWeight: '700',
+            background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text'
+          }}>
+            Gifty
+          </span>
         </div>
       )}
     </div>

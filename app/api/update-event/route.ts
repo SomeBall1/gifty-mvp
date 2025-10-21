@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { eventId, name, date, start_time, location, scanner_pin } = body
+    const { eventId, name, date, start_time, location, scanner_pin, logo_url, show_powered_by } = body
 
     // Validate required fields
     if (!eventId || !name || !date) {
@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
         date,
         start_time: start_time || null,
         location: location || null,
-        scanner_pin: scanner_pin || null
+        scanner_pin: scanner_pin || null,
+        logo_url: logo_url || null,
+        show_powered_by: show_powered_by !== undefined ? show_powered_by : true
       })
       .eq('id', eventId)
       .select()

@@ -66,13 +66,18 @@ Required environment variables (see `.env.local.example`):
 The database schema is defined in `supabase-schema.sql`. Key tables:
 
 1. **profiles** - User accounts (auto-created via trigger on signup)
-2. **events** - Events with optional `scanner_pin` for PIN protection
+2. **events** - Events with:
+   - `scanner_pin` for optional PIN protection
+   - `logo_url` for custom event logos (stored in Supabase Storage)
+   - `show_powered_by` boolean for "Powered by Gifty" watermark visibility
 3. **guests** - Guest records with:
    - `status` tracking ("Not Claimed" → "Claimed")
    - `rsvp_status` tracking ("Pending" → "Confirmed"/"Declined")
    - `rsvp_responded_at` timestamp for RSVP confirmation
 
 The schema uses Row Level Security (RLS) policies - users can only access their own events/guests, but scanner verification and RSVP confirmation have public policies for unauthenticated access.
+
+**Storage**: Event logos stored in Supabase Storage bucket `event-logos` with path `{user_id}/{event_id}.{ext}`
 
 ## Architecture
 
@@ -219,6 +224,32 @@ The RSVP system allows guests to confirm attendance before receiving QR codes:
    - Real-time updates via Supabase subscriptions
 
 5. **Follow-up**: After RSVPs confirmed, send QR codes only to confirmed guests
+
+## Event Branding & Customization
+
+### Custom Event Logos
+
+Organizers can upload custom logos for each event:
+
+1. **Upload**: From event detail page, click "Edit Event" and upload logo
+   - Max file size: 2MB
+   - Recommended dimensions: 400x200px
+   - Supports all standard image formats
+
+2. **Storage**: Logos stored in Supabase Storage bucket `event-logos`
+   - Path structure: `{user_id}/{event_id}.{extension}`
+   - Public read access, authenticated write/delete
+   - Upsert enabled (new uploads replace old ones)
+
+3. **Display**: Logo shown at top of event detail page (max 300x150px display)
+
+### "Powered by Gifty" Watermark
+
+- Optional watermark displayed as fixed badge in bottom-right corner
+- Enabled by default (`show_powered_by: true`)
+- Organizers can toggle in event edit modal
+- Styled with champagne gold gradient matching brand theme
+- Note: "Can be removed with premium" hint shown in UI (future monetization path)
 
 ## CSV Import Format
 

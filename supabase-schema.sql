@@ -17,6 +17,8 @@ CREATE TABLE events (
   start_time TIME,
   location TEXT,
   scanner_pin TEXT,
+  logo_url TEXT,
+  show_powered_by BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -133,3 +135,39 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================
+-- STORAGE SETUP (Run in Supabase Dashboard)
+-- ============================================
+
+-- Create storage bucket for event logos
+-- Go to Storage in Supabase Dashboard and create a bucket named 'event-logos'
+-- Or run this if using SQL:
+-- INSERT INTO storage.buckets (id, name, public)
+-- VALUES ('event-logos', 'event-logos', true);
+
+-- Storage policies for event logos (allow authenticated users to upload their own logos)
+CREATE POLICY "Users can upload event logos"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'event-logos'
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can update own event logos"
+ON storage.objects FOR UPDATE
+USING (
+  bucket_id = 'event-logos'
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can delete own event logos"
+ON storage.objects FOR DELETE
+USING (
+  bucket_id = 'event-logos'
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Event logos are publicly readable"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'event-logos');
