@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import QRCode from 'qrcode'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin } from 'lucide-react'
+import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X } from 'lucide-react'
 
 interface Guest {
   id: string
@@ -15,6 +15,7 @@ interface Guest {
   tier: string
   status: string
   claimed_at: string | null
+  notes: string | null
 }
 
 interface Event {
@@ -36,6 +37,9 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [searchTerm, setSearchTerm] = useState('')
   const [uploadMessage, setUploadMessage] = useState('')
   const [emailMessage, setEmailMessage] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'claimed' | 'not-claimed'>('all')
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -235,11 +239,53 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     link.click()
   }
 
-  const filteredGuests = guests.filter(guest =>
-    guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    guest.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    guest.tier.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const handleEditNote = (guest: Guest) => {
+    setEditingNoteId(guest.id)
+    setNoteText(guest.notes || '')
+  }
+
+  const handleSaveNote = async (guestId: string) => {
+    try {
+      const { error } = await supabase
+        .from('guests')
+        .update({ notes: noteText.trim() || null })
+        .eq('id', guestId)
+
+      if (error) throw error
+
+      setGuests(prevGuests =>
+        prevGuests.map(guest =>
+          guest.id === guestId ? { ...guest, notes: noteText.trim() || null } : guest
+        )
+      )
+      setEditingNoteId(null)
+      setNoteText('')
+    } catch (error) {
+      console.error('Error updating note:', error)
+      alert('Failed to save note. Please try again.')
+    }
+  }
+
+  const handleCancelNote = () => {
+    setEditingNoteId(null)
+    setNoteText('')
+  }
+
+  const filteredGuests = guests.filter(guest => {
+    // Filter by status
+    const matchesStatus =
+      filterStatus === 'all' ||
+      (filterStatus === 'claimed' && guest.status === 'Claimed') ||
+      (filterStatus === 'not-claimed' && guest.status === 'Not Claimed')
+
+    // Filter by search term
+    const matchesSearch =
+      guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      guest.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      guest.tier.toLowerCase().includes(searchTerm.toLowerCase())
+
+    return matchesStatus && matchesSearch
+  })
 
   const claimedCount = guests.filter(g => g.status === 'Claimed').length
   const totalCount = guests.length
@@ -664,24 +710,114 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 Guest List
               </h2>
             </div>
-            
+
             {guests.length > 0 && (
-              <input
-                type="text"
-                placeholder="Search guests..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  background: colors.bg,
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '10px',
-                  color: colors.text,
-                  fontSize: '15px',
-                  outline: 'none'
-                }}
-              />
+              <>
+                {/* Filter Tabs */}
+                <div style={{
+                  display: 'flex',
+                  gap: '8px',
+                  marginBottom: '16px',
+                  flexWrap: 'wrap'
+                }}>
+                  <button
+                    onClick={() => setFilterStatus('all')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterStatus === 'all' ? colors.gold : colors.border}`,
+                      background: filterStatus === 'all' ? `${colors.gold}15` : colors.bg,
+                      color: filterStatus === 'all' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterStatus !== 'all') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterStatus !== 'all') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    All ({totalCount})
+                  </button>
+                  <button
+                    onClick={() => setFilterStatus('claimed')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterStatus === 'claimed' ? colors.gold : colors.border}`,
+                      background: filterStatus === 'claimed' ? `${colors.gold}15` : colors.bg,
+                      color: filterStatus === 'claimed' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterStatus !== 'claimed') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterStatus !== 'claimed') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    Claimed ({claimedCount})
+                  </button>
+                  <button
+                    onClick={() => setFilterStatus('not-claimed')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterStatus === 'not-claimed' ? colors.gold : colors.border}`,
+                      background: filterStatus === 'not-claimed' ? `${colors.gold}15` : colors.bg,
+                      color: filterStatus === 'not-claimed' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterStatus !== 'not-claimed') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterStatus !== 'not-claimed') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    Not Claimed ({totalCount - claimedCount})
+                  </button>
+                </div>
+
+                {/* Search Input */}
+                <input
+                  type="text"
+                  placeholder="Search guests..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </>
             )}
           </div>
 
@@ -769,6 +905,18 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                       letterSpacing: '0.5px'
                     }}>
                       Email
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      minWidth: '200px'
+                    }}>
+                      Notes
                     </th>
                   </tr>
                 </thead>
@@ -870,6 +1018,126 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                         color: colors.textMuted
                       }}>
                         {guest.email}
+                      </td>
+                      <td style={{
+                        padding: '20px 24px'
+                      }}>
+                        {editingNoteId === guest.id ? (
+                          <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            alignItems: 'center'
+                          }}>
+                            <input
+                              type="text"
+                              value={noteText}
+                              onChange={(e) => setNoteText(e.target.value)}
+                              placeholder="Add note..."
+                              autoFocus
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                background: colors.bg,
+                                border: `1px solid ${colors.border}`,
+                                borderRadius: '6px',
+                                color: colors.text,
+                                fontSize: '14px',
+                                outline: 'none'
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSaveNote(guest.id)
+                                } else if (e.key === 'Escape') {
+                                  handleCancelNote()
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => handleSaveNote(guest.id)}
+                              style={{
+                                padding: '8px 12px',
+                                background: colors.success,
+                                border: 'none',
+                                borderRadius: '6px',
+                                color: colors.text,
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#5a8d6a'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = colors.success
+                              }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={handleCancelNote}
+                              style={{
+                                padding: '8px',
+                                background: 'transparent',
+                                border: `1px solid ${colors.border}`,
+                                borderRadius: '6px',
+                                color: colors.textMuted,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = colors.textMuted
+                                e.currentTarget.style.color = colors.text
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = colors.border
+                                e.currentTarget.style.color = colors.textMuted
+                              }}
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleEditNote(guest)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '8px 12px',
+                              background: guest.notes ? `${colors.gold}10` : 'transparent',
+                              border: `1px solid ${guest.notes ? colors.border : colors.border}`,
+                              borderRadius: '6px',
+                              color: guest.notes ? colors.text : colors.textMuted,
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              maxWidth: '300px',
+                              textAlign: 'left'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = colors.gold
+                              e.currentTarget.style.color = colors.gold
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = colors.border
+                              e.currentTarget.style.color = guest.notes ? colors.text : colors.textMuted
+                            }}
+                          >
+                            <StickyNote size={14} />
+                            <span style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {guest.notes || 'Add note...'}
+                            </span>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

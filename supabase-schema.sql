@@ -29,6 +29,7 @@ CREATE TABLE guests (
   tier TEXT NOT NULL DEFAULT 'Standard',
   status TEXT NOT NULL DEFAULT 'Not Claimed',
   claimed_at TIMESTAMPTZ,
+  notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
