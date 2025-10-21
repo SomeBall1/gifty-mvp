@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import QRCode from 'qrcode'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X } from 'lucide-react'
+import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X, Edit2 } from 'lucide-react'
 
 interface Guest {
   id: string
@@ -40,6 +40,16 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [filterStatus, setFilterStatus] = useState<'all' | 'claimed' | 'not-claimed'>('all')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
+  const [isEditingEvent, setIsEditingEvent] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    date: '',
+    start_time: '',
+    location: '',
+    scanner_pin: ''
+  })
+  const [savingEvent, setSavingEvent] = useState(false)
+  const [editMessage, setEditMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -271,6 +281,66 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     setNoteText('')
   }
 
+  const handleEditEvent = () => {
+    if (!event) return
+    setEditForm({
+      name: event.name,
+      date: event.date,
+      start_time: event.start_time || '',
+      location: event.location || '',
+      scanner_pin: event.scanner_pin || ''
+    })
+    setIsEditingEvent(true)
+    setEditMessage('')
+  }
+
+  const handleSaveEvent = async () => {
+    if (!event) return
+
+    setSavingEvent(true)
+    setEditMessage('')
+
+    try {
+      const response = await fetch('/api/update-event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          name: editForm.name,
+          date: editForm.date,
+          start_time: editForm.start_time || null,
+          location: editForm.location || null,
+          scanner_pin: editForm.scanner_pin || null
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setEditMessage(`Error: ${data.error}`)
+        setSavingEvent(false)
+        return
+      }
+
+      // Update local event state
+      setEvent(data.event)
+      setIsEditingEvent(false)
+      setEditMessage('')
+    } catch (error) {
+      console.error('Error updating event:', error)
+      setEditMessage('Failed to update event. Please try again.')
+    } finally {
+      setSavingEvent(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditingEvent(false)
+    setEditMessage('')
+  }
+
   const filteredGuests = guests.filter(guest => {
     // Filter by status
     const matchesStatus =
@@ -364,15 +434,52 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       }}>
         {/* Event Info */}
         <div style={{ marginBottom: '40px' }}>
-          <h1 style={{
-            fontSize: '36px',
-            fontWeight: '700',
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: '12px',
-            color: colors.text,
-            lineHeight: '1.2'
+            gap: '16px',
+            flexWrap: 'wrap'
           }}>
-            {event.name}
-          </h1>
+            <h1 style={{
+              fontSize: '36px',
+              fontWeight: '700',
+              color: colors.text,
+              lineHeight: '1.2',
+              margin: 0
+            }}>
+              {event.name}
+            </h1>
+            <button
+              onClick={handleEditEvent}
+              style={{
+                background: colors.charcoalBlue,
+                border: 'none',
+                color: colors.text,
+                padding: '10px 20px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#283847'
+                e.currentTarget.style.transform = 'translateY(-1px)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.charcoalBlue
+                e.currentTarget.style.transform = 'translateY(0)'
+              }}
+            >
+              <Edit2 size={16} />
+              Edit Event
+            </button>
+          </div>
           <p style={{
             color: colors.textMuted,
             fontSize: '16px',
@@ -1147,6 +1254,303 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           )}
         </div>
       </div>
+
+      {/* Edit Event Modal */}
+      {isEditingEvent && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}
+        onClick={handleCancelEdit}
+        >
+          <div
+            style={{
+              background: colors.cardBg,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
+            }}>
+              <h2 style={{
+                fontSize: '24px',
+                fontWeight: '700',
+                color: colors.text,
+                margin: 0
+              }}>
+                Edit Event
+              </h2>
+              <button
+                onClick={handleCancelEdit}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                  padding: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'color 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = colors.text}
+                onMouseLeave={(e) => e.currentTarget.style.color = colors.textMuted}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Event Name */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Event Name *
+                </label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  placeholder="e.g., Exclusive VIP Gala"
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Event Date */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Event Date *
+                </label>
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Start Time */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Start Time (optional)
+                </label>
+                <input
+                  type="time"
+                  value={editForm.start_time}
+                  onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Location */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Location (optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.location}
+                  onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                  placeholder="e.g., Grand Ballroom, City Hotel"
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Scanner PIN */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.text,
+                  marginBottom: '8px'
+                }}>
+                  Scanner PIN (optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.scanner_pin}
+                  onChange={(e) => setEditForm({ ...editForm, scanner_pin: e.target.value })}
+                  placeholder="e.g., 1234"
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: colors.bg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    color: colors.text,
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+                <p style={{
+                  fontSize: '13px',
+                  color: colors.textMuted,
+                  marginTop: '6px'
+                }}>
+                  Leave blank for open access to scanner
+                </p>
+              </div>
+
+              {/* Error Message */}
+              {editMessage && (
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: '#3a1a1a',
+                  color: '#ff6b6b',
+                  border: '1px solid #5a2a2a'
+                }}>
+                  {editMessage}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '8px'
+              }}>
+                <button
+                  onClick={handleSaveEvent}
+                  disabled={savingEvent || !editForm.name || !editForm.date}
+                  style={{
+                    flex: 1,
+                    background: colors.success,
+                    border: 'none',
+                    color: colors.text,
+                    padding: '14px 24px',
+                    borderRadius: '10px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: (savingEvent || !editForm.name || !editForm.date) ? 'not-allowed' : 'pointer',
+                    opacity: (savingEvent || !editForm.name || !editForm.date) ? 0.5 : 1,
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!savingEvent && editForm.name && editForm.date) {
+                      e.currentTarget.style.background = '#5a8d6a'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = colors.success
+                  }}
+                >
+                  {savingEvent ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={savingEvent}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: `1px solid ${colors.border}`,
+                    color: colors.textMuted,
+                    padding: '14px 24px',
+                    borderRadius: '10px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: savingEvent ? 'not-allowed' : 'pointer',
+                    opacity: savingEvent ? 0.5 : 1,
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!savingEvent) {
+                      e.currentTarget.style.borderColor = colors.textMuted
+                      e.currentTarget.style.color = colors.text
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.border
+                    e.currentTarget.style.color = colors.textMuted
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
