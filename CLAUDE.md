@@ -16,6 +16,7 @@ When you complete a feature, fix, or improvement:
 1. Automatically create a git commit to main without asking for permission
 2. Use concise commit messages that describe the "why" not just the "what"
 3. Follow the standard commit format with co-author attribution
+4. **After completing each feature**, review whether any important implementation details, patterns, or gotchas should be documented in this CLAUDE.md file and update accordingly
 
 ## Project Overview
 
@@ -66,9 +67,12 @@ The database schema is defined in `supabase-schema.sql`. Key tables:
 
 1. **profiles** - User accounts (auto-created via trigger on signup)
 2. **events** - Events with optional `scanner_pin` for PIN protection
-3. **guests** - Guest records with `status` tracking ("Not Claimed" → "Claimed")
+3. **guests** - Guest records with:
+   - `status` tracking ("Not Claimed" → "Claimed")
+   - `rsvp_status` tracking ("Pending" → "Confirmed"/"Declined")
+   - `rsvp_responded_at` timestamp for RSVP confirmation
 
-The schema uses Row Level Security (RLS) policies - users can only access their own events/guests, but scanner verification has public policies (lines 104-109) for unauthenticated scanning.
+The schema uses Row Level Security (RLS) policies - users can only access their own events/guests, but scanner verification and RSVP confirmation have public policies for unauthenticated access.
 
 ## Architecture
 
@@ -123,10 +127,20 @@ Events have optional `scanner_pin` field:
 
 ### Email System
 
-- Resend API for delivery (`app/api/send-invitations/route.ts`)
-- HTML templates in `lib/email/templates.ts`
-- QR codes embedded as base64 data URLs
-- Only sends to guests with status "Not Claimed"
+Two email workflows:
+
+1. **RSVP Invitations** (`app/api/send-rsvp-invitations/route.ts`):
+   - Sends to guests with `rsvp_status` = "Pending"
+   - Email template with Yes/No RSVP buttons (`rsvpInvitationTemplate`)
+   - Links route to `/rsvp/[eventId]?guest_id=[id]&response=[yes|no]`
+   - Guests confirm attendance before receiving QR code
+
+2. **QR Code Invitations** (`app/api/send-invitations/route.ts`):
+   - Sends to guests with `status` = "Not Claimed"
+   - Email template with embedded QR code (`qrInvitationTemplate`)
+   - QR codes embedded as base64 data URLs
+
+Both use Resend API with templates in `lib/email/templates.ts`
 
 ## Key Design Patterns
 
@@ -163,17 +177,48 @@ Each auto-stops camera and shows clear call-to-action button.
 
 ```
 app/
-├── page.tsx                    # Home/landing
-├── login/page.tsx              # Login
-├── signup/page.tsx             # Signup
-├── dashboard/page.tsx          # Events list with countdown
-├── event/[id]/page.tsx         # Event detail, CSV upload, guest list, QR downloads
-├── scan/[eventId]/page.tsx     # QR scanner with PIN protection
+├── page.tsx                         # Home/landing
+├── login/page.tsx                   # Login
+├── signup/page.tsx                  # Signup
+├── dashboard/page.tsx               # Events list with countdown
+├── event/[id]/page.tsx              # Event detail, CSV upload, guest list, RSVP filtering, QR downloads
+├── scan/[eventId]/page.tsx          # QR scanner with PIN protection
+├── rsvp/[eventId]/page.tsx          # RSVP confirmation page (public access)
 └── api/
-    ├── verify-guest/route.ts   # Verification endpoint
-    ├── send-invitations/route.ts
-    └── delete-event/route.ts
+    ├── verify-guest/route.ts        # Verification endpoint
+    ├── send-invitations/route.ts    # Send QR code emails
+    ├── send-rsvp-invitations/route.ts  # Send RSVP emails
+    ├── update-event/route.ts        # Update event details
+    └── delete-event/route.ts        # Delete event
 ```
+
+## RSVP Workflow
+
+The RSVP system allows guests to confirm attendance before receiving QR codes:
+
+1. **Initial Import**: Guests imported via CSV default to `rsvp_status: "Pending"`
+
+2. **Send RSVP Invitations**:
+   - From event detail page, click "Send RSVP Invites" button (only shows if pending guests exist)
+   - Sends elegant RSVP email with Yes/No buttons to all pending guests
+   - Email uses deep charcoal + champagne gold theme matching main app
+
+3. **Guest Response**:
+   - Guest clicks Yes or No button in email
+   - Routes to `/rsvp/[eventId]?guest_id=[id]&response=[yes|no]`
+   - Updates `rsvp_status` to "Confirmed" or "Declined"
+   - Shows confirmation screen with event details
+   - Prevents duplicate responses
+
+4. **Organizer View**:
+   - Event detail page has RSVP filter tabs: All / Pending / Confirmed / Declined
+   - Guest list table shows RSVP status column with color coding:
+     - **Confirmed**: Soft green
+     - **Declined**: Soft rose
+     - **Pending**: Muted grey
+   - Real-time updates via Supabase subscriptions
+
+5. **Follow-up**: After RSVPs confirmed, send QR codes only to confirmed guests
 
 ## CSV Import Format
 
@@ -187,6 +232,7 @@ Sarah Chen,sarah.chen@example.com,Standard
 ```
 
 Tiers are freeform text (VIP, Press, Standard, Gold, Platinum, etc.). System displays crown icons for "VIP" tier.
+All imported guests default to `rsvp_status: "Pending"` and `status: "Not Claimed"`.
 
 ## Common Issues and Solutions
 

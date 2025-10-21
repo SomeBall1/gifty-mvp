@@ -15,6 +15,8 @@ interface Guest {
   tier: string
   status: string
   claimed_at: string | null
+  rsvp_status: string
+  rsvp_responded_at: string | null
   notes: string | null
 }
 
@@ -38,6 +40,9 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [uploadMessage, setUploadMessage] = useState('')
   const [emailMessage, setEmailMessage] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'claimed' | 'not-claimed'>('all')
+  const [filterRSVP, setFilterRSVP] = useState<'all' | 'pending' | 'confirmed' | 'declined'>('all')
+  const [sendingRSVPEmails, setSendingRSVPEmails] = useState(false)
+  const [rsvpEmailMessage, setRSVPEmailMessage] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
   const [isEditingEvent, setIsEditingEvent] = useState(false)
@@ -286,6 +291,42 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     setNoteText('')
   }
 
+  const sendRSVPInvitations = async () => {
+    setSendingRSVPEmails(true)
+    setRSVPEmailMessage('')
+
+    try {
+      const response = await fetch('/api/send-rsvp-invitations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId: params.id,
+          fromEmail: process.env.NEXT_PUBLIC_RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setRSVPEmailMessage(`Error: ${data.error}`)
+        setSendingRSVPEmails(false)
+        return
+      }
+
+      setRSVPEmailMessage(
+        `Successfully sent ${data.sent} RSVP invitation${data.sent !== 1 ? 's' : ''}!` +
+        (data.failed > 0 ? ` (${data.failed} failed)` : '')
+      )
+      setTimeout(() => setRSVPEmailMessage(''), 5000)
+    } catch (error: any) {
+      setRSVPEmailMessage(`Error: ${error.message}`)
+    } finally {
+      setSendingRSVPEmails(false)
+    }
+  }
+
   const handleEditEvent = () => {
     if (!event) return
     setEditForm({
@@ -453,17 +494,27 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       (filterStatus === 'claimed' && guest.status === 'Claimed') ||
       (filterStatus === 'not-claimed' && guest.status === 'Not Claimed')
 
+    // Filter by RSVP status
+    const matchesRSVP =
+      filterRSVP === 'all' ||
+      (filterRSVP === 'pending' && guest.rsvp_status === 'Pending') ||
+      (filterRSVP === 'confirmed' && guest.rsvp_status === 'Confirmed') ||
+      (filterRSVP === 'declined' && guest.rsvp_status === 'Declined')
+
     // Filter by search term
     const matchesSearch =
       guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       guest.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       guest.tier.toLowerCase().includes(searchTerm.toLowerCase())
 
-    return matchesStatus && matchesSearch
+    return matchesStatus && matchesRSVP && matchesSearch
   })
 
   const claimedCount = guests.filter(g => g.status === 'Claimed').length
   const totalCount = guests.length
+  const rsvpPendingCount = guests.filter(g => g.rsvp_status === 'Pending').length
+  const rsvpConfirmedCount = guests.filter(g => g.rsvp_status === 'Confirmed').length
+  const rsvpDeclinedCount = guests.filter(g => g.rsvp_status === 'Declined').length
 
   if (loading) {
     return (
@@ -908,7 +959,58 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 {downloadingQR ? 'Creating ZIP...' : 'Download All QR Codes'}
               </button>
             )}
+
+            {/* Send RSVP Invitations Button */}
+            {rsvpPendingCount > 0 && (
+              <button
+                onClick={sendRSVPInvitations}
+                disabled={sendingRSVPEmails}
+                style={{
+                  background: colors.gold,
+                  border: 'none',
+                  color: colors.bg,
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: sendingRSVPEmails ? 'not-allowed' : 'pointer',
+                  opacity: sendingRSVPEmails ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s ease',
+                  transform: 'translateY(0)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!sendingRSVPEmails) {
+                    e.currentTarget.style.background = colors.goldLight
+                    e.currentTarget.style.transform = 'translateY(-1px)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.gold
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                📧 {sendingRSVPEmails ? 'Sending...' : `Send RSVP Invites (${rsvpPendingCount})`}
+              </button>
+            )}
           </div>
+
+          {rsvpEmailMessage && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              background: rsvpEmailMessage.includes('Error') ? `${colors.error}20` : colors.successBg,
+              border: `1px solid ${rsvpEmailMessage.includes('Error') ? colors.error : colors.success}`,
+              color: rsvpEmailMessage.includes('Error') ? colors.error : colors.success,
+              fontSize: '14px',
+              fontWeight: '500'
+            }}>
+              {rsvpEmailMessage}
+            </div>
+          )}
 
           {uploadMessage && (
             <div style={{
@@ -1043,6 +1145,129 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                   </button>
                 </div>
 
+                {/* RSVP Filter Tabs */}
+                <div style={{
+                  display: 'flex',
+                  gap: '8px',
+                  marginBottom: '16px',
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{
+                    padding: '8px 12px',
+                    color: colors.textMuted,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}>
+                    RSVP:
+                  </span>
+                  <button
+                    onClick={() => setFilterRSVP('all')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterRSVP === 'all' ? colors.gold : colors.border}`,
+                      background: filterRSVP === 'all' ? `${colors.gold}15` : colors.bg,
+                      color: filterRSVP === 'all' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterRSVP !== 'all') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterRSVP !== 'all') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setFilterRSVP('pending')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterRSVP === 'pending' ? colors.gold : colors.border}`,
+                      background: filterRSVP === 'pending' ? `${colors.gold}15` : colors.bg,
+                      color: filterRSVP === 'pending' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterRSVP !== 'pending') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterRSVP !== 'pending') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    Pending ({rsvpPendingCount})
+                  </button>
+                  <button
+                    onClick={() => setFilterRSVP('confirmed')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterRSVP === 'confirmed' ? colors.gold : colors.border}`,
+                      background: filterRSVP === 'confirmed' ? `${colors.gold}15` : colors.bg,
+                      color: filterRSVP === 'confirmed' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterRSVP !== 'confirmed') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterRSVP !== 'confirmed') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    Confirmed ({rsvpConfirmedCount})
+                  </button>
+                  <button
+                    onClick={() => setFilterRSVP('declined')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      border: `1px solid ${filterRSVP === 'declined' ? colors.gold : colors.border}`,
+                      background: filterRSVP === 'declined' ? `${colors.gold}15` : colors.bg,
+                      color: filterRSVP === 'declined' ? colors.gold : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (filterRSVP !== 'declined') {
+                        e.currentTarget.style.borderColor = colors.textMuted
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (filterRSVP !== 'declined') {
+                        e.currentTarget.style.borderColor = colors.border
+                      }
+                    }}
+                  >
+                    Declined ({rsvpDeclinedCount})
+                  </button>
+                </div>
+
                 {/* Search Input */}
                 <input
                   type="text"
@@ -1126,6 +1351,17 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                       letterSpacing: '0.5px'
                     }}>
                       Tier
+                    </th>
+                    <th style={{
+                      padding: '16px 24px',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      RSVP
                     </th>
                     <th style={{
                       padding: '16px 24px',
@@ -1227,6 +1463,30 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                           border: `1px solid ${guest.tier.toLowerCase().includes('vip') ? `${colors.gold}30` : colors.border}`
                         }}>
                           {guest.tier}
+                        </span>
+                      </td>
+                      <td style={{ padding: '20px 24px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          background:
+                            guest.rsvp_status === 'Confirmed' ? `${colors.success}20` :
+                            guest.rsvp_status === 'Declined' ? `${colors.error}20` :
+                            `${colors.textMuted}15`,
+                          color:
+                            guest.rsvp_status === 'Confirmed' ? colors.success :
+                            guest.rsvp_status === 'Declined' ? colors.error :
+                            colors.textMuted,
+                          border: `1px solid ${
+                            guest.rsvp_status === 'Confirmed' ? `${colors.success}40` :
+                            guest.rsvp_status === 'Declined' ? `${colors.error}40` :
+                            colors.border
+                          }`
+                        }}>
+                          {guest.rsvp_status}
                         </span>
                       </td>
                       <td style={{ padding: '20px 24px' }}>

@@ -29,6 +29,8 @@ CREATE TABLE guests (
   tier TEXT NOT NULL DEFAULT 'Standard',
   status TEXT NOT NULL DEFAULT 'Not Claimed',
   claimed_at TIMESTAMPTZ,
+  rsvp_status TEXT NOT NULL DEFAULT 'Pending',
+  rsvp_responded_at TIMESTAMPTZ,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -37,6 +39,7 @@ CREATE TABLE guests (
 CREATE INDEX idx_guests_event_id ON guests(event_id);
 CREATE INDEX idx_events_user_id ON events(user_id);
 CREATE INDEX idx_guests_status ON guests(status);
+CREATE INDEX idx_guests_rsvp_status ON guests(rsvp_status);
 
 -- Enable Row Level Security
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -108,6 +111,11 @@ CREATE POLICY "Public can read guests for verification" ON guests
   FOR SELECT USING (true);
 
 CREATE POLICY "Public can update guest status for verification" ON guests
+  FOR UPDATE USING (true)
+  WITH CHECK (true);
+
+-- Allow public RSVP confirmation (guests can update their own RSVP status)
+CREATE POLICY "Public can update RSVP status" ON guests
   FOR UPDATE USING (true)
   WITH CHECK (true);
 
