@@ -5,6 +5,13 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export async function POST(request: Request) {
   try {
+    // Debug logging
+    console.log('Environment check:', {
+      hasKey: !!process.env.RESEND_API_KEY,
+      keyPrefix: process.env.RESEND_API_KEY?.substring(0, 3),
+      allEnvKeys: Object.keys(process.env).filter(k => k.includes('RESEND'))
+    })
+
     // Check for Resend API key at runtime
     if (!process.env.RESEND_API_KEY) {
       return NextResponse.json(
