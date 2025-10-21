@@ -14,9 +14,8 @@ Feel free to give multi-step instructions. Bubble will let you know when he's st
 
 When you complete a feature, fix, or improvement:
 1. Automatically create a git commit to main without asking for permission
-2. Use clear, concise commit messages that describe the "why" not just the "what"
+2. Use concise commit messages that describe the "why" not just the "what"
 3. Follow the standard commit format with co-author attribution
-4. Bubble will review commits in GitHub Desktop and can amend/revert if needed
 
 ## Project Overview
 
