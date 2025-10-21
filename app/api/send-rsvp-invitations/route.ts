@@ -1,12 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { rsvpInvitationTemplate } from '@/lib/email/templates'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -14,6 +9,17 @@ const resend = process.env.RESEND_API_KEY
 
 export async function POST(request: Request) {
   try {
+    const supabase = createServerSupabaseClient()
+
+    // Check authentication
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const { eventId, fromEmail = 'onboarding@resend.dev' } = await request.json()
 
     if (!eventId) {
@@ -23,7 +29,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch event details
+    // Fetch event details (RLS ensures user owns this event)
     const { data: event, error: eventError } = await supabase
       .from('events')
       .select('*')
