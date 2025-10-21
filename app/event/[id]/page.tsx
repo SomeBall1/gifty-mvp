@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import QRCode from 'qrcode'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X, Edit2 } from 'lucide-react'
+import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X, Edit2, UserPlus } from 'lucide-react'
 
 interface Guest {
   id: string
@@ -50,6 +50,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   })
   const [savingEvent, setSavingEvent] = useState(false)
   const [editMessage, setEditMessage] = useState('')
+  const [isAddingGuest, setIsAddingGuest] = useState(false)
+  const [addGuestForm, setAddGuestForm] = useState({ name: '', email: '', tier: '' })
+  const [addingGuest, setAddingGuest] = useState(false)
+  const [addGuestMessage, setAddGuestMessage] = useState('')
+  const [newGuestQR, setNewGuestQR] = useState<{ guestId: string; name: string; tier: string; qrDataUrl: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -339,6 +344,97 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const handleCancelEdit = () => {
     setIsEditingEvent(false)
     setEditMessage('')
+  }
+
+  const handleAddGuest = () => {
+    setAddGuestForm({ name: '', email: '', tier: '' })
+    setAddGuestMessage('')
+    setNewGuestQR(null)
+    setIsAddingGuest(true)
+  }
+
+  const handleQuickAddGuest = async () => {
+    if (!addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) {
+      setAddGuestMessage('Please fill in all fields')
+      return
+    }
+
+    setAddingGuest(true)
+    setAddGuestMessage('')
+
+    try {
+      // Insert guest into database
+      const { data, error } = await supabase
+        .from('guests')
+        .insert({
+          event_id: params.id,
+          name: addGuestForm.name.trim(),
+          email: addGuestForm.email.trim(),
+          tier: addGuestForm.tier.trim(),
+          status: 'Not Claimed'
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Generate QR code immediately
+      const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${params.id}?guest_id=${data.id}`
+      const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+        width: 600,
+        margin: 2,
+      })
+
+      // Store QR code data for display
+      setNewGuestQR({
+        guestId: data.id,
+        name: data.name,
+        tier: data.tier,
+        qrDataUrl
+      })
+
+      setAddGuestMessage('Guest added successfully!')
+      // Real-time subscription will add guest to list automatically
+    } catch (error: any) {
+      console.error('Error adding guest:', error)
+      setAddGuestMessage(`Error: ${error.message}`)
+    } finally {
+      setAddingGuest(false)
+    }
+  }
+
+  const handleWhatsAppShare = () => {
+    if (!newGuestQR) return
+
+    // Create WhatsApp message with guest details
+    const message = encodeURIComponent(
+      `🎁 GIFTY Event Invitation\n\n` +
+      `Event: ${event?.name}\n` +
+      `Guest: ${newGuestQR.name}\n` +
+      `Tier: ${newGuestQR.tier}\n\n` +
+      `Please show this QR code at the event to claim your goodie bag!\n\n` +
+      `QR Code: ${newGuestQR.qrDataUrl}`
+    )
+
+    // Open WhatsApp with pre-filled message
+    // On mobile, this opens WhatsApp app; on desktop, WhatsApp Web
+    window.open(`https://wa.me/?text=${message}`, '_blank')
+  }
+
+  const handleDownloadNewQR = () => {
+    if (!newGuestQR) return
+
+    const link = document.createElement('a')
+    link.href = newGuestQR.qrDataUrl
+    link.download = `${newGuestQR.name.replace(/[^a-z0-9]/gi, '_')}_${newGuestQR.tier}.png`
+    link.click()
+  }
+
+  const handleCloseAddGuest = () => {
+    setIsAddingGuest(false)
+    setAddGuestForm({ name: '', email: '', tier: '' })
+    setAddGuestMessage('')
+    setNewGuestQR(null)
   }
 
   const filteredGuests = guests.filter(guest => {
@@ -689,12 +785,43 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           }}>
             Guest List Actions
           </h2>
-          
+
           <div style={{
             display: 'flex',
             gap: '12px',
             flexWrap: 'wrap'
           }}>
+            {/* Quick Add Guest Button - PROMINENT GOLD */}
+            <button
+              onClick={handleAddGuest}
+              style={{
+                background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
+                border: 'none',
+                color: colors.bg,
+                padding: '14px 28px',
+                borderRadius: '10px',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                boxShadow: `0 4px 12px ${colors.gold}40`
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.boxShadow = `0 6px 16px ${colors.gold}60`
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = `0 4px 12px ${colors.gold}40`
+              }}
+            >
+              <UserPlus size={20} />
+              Add Guest Now
+            </button>
+
             {/* Upload CSV Button - Charcoal Blue */}
             <input
               ref={fileInputRef}
@@ -703,7 +830,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               onChange={handleFileUpload}
               style={{ display: 'none' }}
             />
-            
+
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
@@ -1254,6 +1381,345 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           )}
         </div>
       </div>
+
+      {/* Quick Add Guest Modal */}
+      {isAddingGuest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}
+        onClick={handleCloseAddGuest}
+        >
+          <div
+            style={{
+              background: colors.cardBg,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
+            }}>
+              <h2 style={{
+                fontSize: '24px',
+                fontWeight: '700',
+                color: colors.text,
+                margin: 0
+              }}>
+                {newGuestQR ? '✅ Guest Added!' : '➕ Quick Add Guest'}
+              </h2>
+              <button
+                onClick={handleCloseAddGuest}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                  padding: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'color 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = colors.text}
+                onMouseLeave={(e) => e.currentTarget.style.color = colors.textMuted}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {!newGuestQR ? (
+              // Form to add guest
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    Guest Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={addGuestForm.name}
+                    onChange={(e) => setAddGuestForm({ ...addGuestForm, name: e.target.value })}
+                    placeholder="e.g., Sarah Chen"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: colors.bg,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '10px',
+                      color: colors.text,
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={addGuestForm.email}
+                    onChange={(e) => setAddGuestForm({ ...addGuestForm, email: e.target.value })}
+                    placeholder="e.g., sarah@example.com"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: colors.bg,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '10px',
+                      color: colors.text,
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    Tier *
+                  </label>
+                  <input
+                    type="text"
+                    value={addGuestForm.tier}
+                    onChange={(e) => setAddGuestForm({ ...addGuestForm, tier: e.target.value })}
+                    placeholder="e.g., VIP, Press, Standard"
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: colors.bg,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '10px',
+                      color: colors.text,
+                      fontSize: '15px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {addGuestMessage && !newGuestQR && (
+                  <div style={{
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    background: addGuestMessage.includes('Error') ? '#3a1a1a' : colors.successBg,
+                    color: addGuestMessage.includes('Error') ? '#ff6b6b' : colors.gold,
+                    border: `1px solid ${addGuestMessage.includes('Error') ? '#5a2a2a' : colors.success}`
+                  }}>
+                    {addGuestMessage}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleQuickAddGuest}
+                  disabled={addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier}
+                  style={{
+                    background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
+                    border: 'none',
+                    color: colors.bg,
+                    padding: '14px 24px',
+                    borderRadius: '10px',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    cursor: (addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) ? 'not-allowed' : 'pointer',
+                    opacity: (addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) ? 0.5 : 1,
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!addingGuest && addGuestForm.name && addGuestForm.email && addGuestForm.tier) {
+                      e.currentTarget.style.transform = 'translateY(-1px)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)'
+                  }}
+                >
+                  {addingGuest ? 'Adding Guest...' : '➕ Add & Generate QR'}
+                </button>
+              </div>
+            ) : (
+              // QR Code Display and Sharing Options
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
+                {/* Success Message */}
+                <div style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: colors.successBg,
+                  border: `1px solid ${colors.success}`,
+                  textAlign: 'center'
+                }}>
+                  <p style={{ fontSize: '16px', color: colors.gold, fontWeight: '600', marginBottom: '4px' }}>
+                    {newGuestQR.name} has been added!
+                  </p>
+                  <p style={{ fontSize: '14px', color: colors.textMuted }}>
+                    Tier: {newGuestQR.tier}
+                  </p>
+                </div>
+
+                {/* QR Code Display */}
+                <div style={{
+                  background: 'white',
+                  padding: '24px',
+                  borderRadius: '16px',
+                  boxShadow: `0 4px 16px ${colors.gold}20`
+                }}>
+                  <img
+                    src={newGuestQR.qrDataUrl}
+                    alt="Guest QR Code"
+                    style={{
+                      width: '300px',
+                      height: '300px',
+                      display: 'block'
+                    }}
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{
+                  width: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  {/* WhatsApp Share Button - PRIMARY */}
+                  <button
+                    onClick={handleWhatsAppShare}
+                    style={{
+                      background: '#25D366',
+                      border: 'none',
+                      color: 'white',
+                      padding: '16px 24px',
+                      borderRadius: '10px',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#20BA5A'
+                      e.currentTarget.style.transform = 'translateY(-1px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#25D366'
+                      e.currentTarget.style.transform = 'translateY(0)'
+                    }}
+                  >
+                    📱 Send via WhatsApp
+                  </button>
+
+                  {/* Download QR Button */}
+                  <button
+                    onClick={handleDownloadNewQR}
+                    style={{
+                      background: colors.charcoalBlue,
+                      border: 'none',
+                      color: colors.text,
+                      padding: '14px 24px',
+                      borderRadius: '10px',
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#283847'
+                      e.currentTarget.style.transform = 'translateY(-1px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = colors.charcoalBlue
+                      e.currentTarget.style.transform = 'translateY(0)'
+                    }}
+                  >
+                    <Download size={18} />
+                    Download QR Code
+                  </button>
+
+                  {/* Close Button */}
+                  <button
+                    onClick={handleCloseAddGuest}
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid ${colors.border}`,
+                      color: colors.textMuted,
+                      padding: '14px 24px',
+                      borderRadius: '10px',
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.textMuted
+                      e.currentTarget.style.color = colors.text
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border
+                      e.currentTarget.style.color = colors.textMuted
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <p style={{
+                  fontSize: '13px',
+                  color: colors.textMuted,
+                  textAlign: 'center',
+                  lineHeight: '1.5'
+                }}>
+                  💡 The guest can also show this QR code directly from their phone screen - no need to print!
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Event Modal */}
       {isEditingEvent && (
