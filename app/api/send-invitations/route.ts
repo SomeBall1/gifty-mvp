@@ -4,12 +4,17 @@ import QRCode from 'qrcode'
 import { qrInvitationTemplate } from '@/lib/email/templates'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
-const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null
-
 export async function POST(request: Request) {
   try {
+    // Check for Resend API key at runtime
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { error: 'Resend API key not configured' },
+        { status: 500 }
+      )
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY)
     const supabase = createServerSupabaseClient()
 
     // Check authentication
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { eventId, guestIds, fromEmail = 'onboarding@resend.dev' } = await request.json()
+    const { eventId, guestIds, fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev' } = await request.json()
 
     if (!eventId) {
       return NextResponse.json(
@@ -109,11 +114,7 @@ export async function POST(request: Request) {
           tier: guest.tier
         })
 
-        // Send email via Resend (only if configured)
-        if (!resend) {
-          throw new Error('Resend API key not configured')
-        }
-
+        // Send email via Resend
         const { error: sendError } = await resend.emails.send({
           from: fromEmail,
           to: guest.email,
