@@ -2402,7 +2402,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                       marginTop: '4px',
                       margin: 0
                     }}>
-                      Display a small watermark supporting Gifty (can be removed with premium)
+                      Display watermark on scanner screens shown to VIP guests (can be removed with premium)
                     </p>
                   </div>
                 </label>
@@ -2487,37 +2487,6 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Powered by Gifty Watermark */}
-      {event?.show_powered_by && (
-        <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          padding: '8px 16px',
-          background: `${colors.cardBg}dd`,
-          border: `1px solid ${colors.border}`,
-          borderRadius: '20px',
-          backdropFilter: 'blur(10px)',
-          fontSize: '12px',
-          color: colors.textMuted,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          zIndex: 100
-        }}>
-          <span>Powered by</span>
-          <span style={{
-            fontWeight: '700',
-            background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
-          }}>
-            Gifty
-          </span>
         </div>
       )}
     </div>

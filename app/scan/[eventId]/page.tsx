@@ -32,6 +32,8 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
   const [pin, setPin] = useState('')
   const [pinError, setPinError] = useState('')
   const [eventName, setEventName] = useState('')
+  const [eventLogo, setEventLogo] = useState<string | null>(null)
+  const [showPoweredBy, setShowPoweredBy] = useState(true)
   const [loading, setLoading] = useState(true)
   const [hasPin, setHasPin] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -54,7 +56,7 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
   const checkEventPin = async () => {
     const { data: event, error } = await supabase
       .from('events')
-      .select('name, scanner_pin')
+      .select('name, scanner_pin, logo_url, show_powered_by')
       .eq('id', params.eventId)
       .single()
 
@@ -65,14 +67,16 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
     }
 
     setEventName(event.name)
-    
+    setEventLogo(event.logo_url)
+    setShowPoweredBy(event.show_powered_by)
+
     if (!event.scanner_pin) {
       setIsAuthenticated(true)
       setHasPin(false)
     } else {
       setHasPin(true)
     }
-    
+
     setLoading(false)
   }
 
@@ -415,8 +419,24 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         alignItems: 'center',
         justifyContent: 'center',
         padding: '32px',
-        textAlign: 'center'
+        textAlign: 'center',
+        position: 'relative'
       }}>
+        {/* Event Logo */}
+        {eventLogo && (
+          <div style={{ marginBottom: '24px' }}>
+            <img
+              src={eventLogo}
+              alt="Event Logo"
+              style={{
+                maxWidth: '250px',
+                maxHeight: '120px',
+                objectFit: 'contain'
+              }}
+            />
+          </div>
+        )}
+
         <div style={{ fontSize: '128px', marginBottom: '32px' }}>✓</div>
         <h1 style={{
           fontSize: '48px',
@@ -450,6 +470,27 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         >
           Done
         </button>
+
+        {/* Powered by Gifty Watermark */}
+        {showPoweredBy && (
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            padding: '8px 16px',
+            background: 'rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '20px',
+            fontSize: '12px',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span>Powered by</span>
+            <span style={{ fontWeight: '700' }}>Gifty</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -464,8 +505,24 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         alignItems: 'center',
         justifyContent: 'center',
         padding: '32px',
-        textAlign: 'center'
+        textAlign: 'center',
+        position: 'relative'
       }}>
+        {/* Event Logo */}
+        {eventLogo && (
+          <div style={{ marginBottom: '24px' }}>
+            <img
+              src={eventLogo}
+              alt="Event Logo"
+              style={{
+                maxWidth: '250px',
+                maxHeight: '120px',
+                objectFit: 'contain'
+              }}
+            />
+          </div>
+        )}
+
         <div style={{ fontSize: '128px', marginBottom: '32px' }}>✕</div>
         <h1 style={{
           fontSize: '48px',
@@ -499,6 +556,27 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         >
           Done
         </button>
+
+        {/* Powered by Gifty Watermark */}
+        {showPoweredBy && (
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            padding: '8px 16px',
+            background: 'rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '20px',
+            fontSize: '12px',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span>Powered by</span>
+            <span style={{ fontWeight: '700' }}>Gifty</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -513,8 +591,24 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         alignItems: 'center',
         justifyContent: 'center',
         padding: '32px',
-        textAlign: 'center'
+        textAlign: 'center',
+        position: 'relative'
       }}>
+        {/* Event Logo */}
+        {eventLogo && (
+          <div style={{ marginBottom: '24px' }}>
+            <img
+              src={eventLogo}
+              alt="Event Logo"
+              style={{
+                maxWidth: '250px',
+                maxHeight: '120px',
+                objectFit: 'contain'
+              }}
+            />
+          </div>
+        )}
+
         <div style={{ fontSize: '128px', marginBottom: '32px' }}>⚠</div>
         <h1 style={{
           fontSize: '48px',
@@ -539,6 +633,27 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         >
           Done
         </button>
+
+        {/* Powered by Gifty Watermark */}
+        {showPoweredBy && (
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            padding: '8px 16px',
+            background: 'rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '20px',
+            fontSize: '12px',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span>Powered by</span>
+            <span style={{ fontWeight: '700' }}>Gifty</span>
+          </div>
+        )}
       </div>
     )
   }
