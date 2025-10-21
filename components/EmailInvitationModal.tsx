@@ -119,6 +119,10 @@ export default function EmailInvitationModal({
         ? '/api/send-rsvp-invitations'
         : '/api/send-invitations'
 
+      // Create abort controller for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 minute timeout
+
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
@@ -128,8 +132,17 @@ export default function EmailInvitationModal({
           eventId,
           guestIds: Array.from(selectedRecipients),
           fromEmail
-        })
+        }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
+
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error(`Server returned ${response.status} ${response.statusText}. Expected JSON response.`)
+      }
 
       const data = await response.json()
 
@@ -151,7 +164,16 @@ export default function EmailInvitationModal({
       }
     } catch (error: any) {
       console.error('Error sending invitations:', error)
-      alert(`❌ Error: ${error.message}`)
+
+      // Better error messages
+      let errorMessage = error.message
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. The server took too long to respond. Please try again with fewer recipients or check your network connection.'
+      } else if (error.message.includes('Failed to fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.'
+      }
+
+      alert(`❌ Error: ${errorMessage}`)
       setStep('confirm')
     } finally {
       setSending(false)
@@ -641,7 +663,7 @@ export default function EmailInvitationModal({
                 color: colors.textMuted,
                 fontSize: '14px'
               }}>
-                Please wait while we send {recipients.length} email{recipients.length !== 1 ? 's' : ''}
+                Please wait while we send {selectedRecipients.size} email{selectedRecipients.size !== 1 ? 's' : ''}
               </p>
             </div>
             {/* Progress Bar */}

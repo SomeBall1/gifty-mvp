@@ -91,10 +91,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     checkAuth()
     fetchEvent()
     fetchGuests()
-    
-    // Set up real-time subscription for guest updates
+
+    // Set up real-time subscriptions for both guests and event updates
     const channel = supabase
-      .channel('guests-changes')
+      .channel('event-realtime-changes')
+      // Guest UPDATE events (status changes, notes, RSVP updates, etc.)
       .on(
         'postgres_changes',
         {
@@ -104,13 +105,15 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           filter: `event_id=eq.${params.id}`
         },
         (payload) => {
-          setGuests(prevGuests => 
-            prevGuests.map(guest => 
+          console.log('Guest updated:', payload.new)
+          setGuests(prevGuests =>
+            prevGuests.map(guest =>
               guest.id === payload.new.id ? { ...guest, ...payload.new } as Guest : guest
             )
           )
         }
       )
+      // Guest INSERT events (new guests added)
       .on(
         'postgres_changes',
         {
@@ -120,7 +123,36 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           filter: `event_id=eq.${params.id}`
         },
         (payload) => {
+          console.log('Guest inserted:', payload.new)
           setGuests(prevGuests => [...prevGuests, payload.new as Guest])
+        }
+      )
+      // Guest DELETE events (guests removed)
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'guests',
+          filter: `event_id=eq.${params.id}`
+        },
+        (payload) => {
+          console.log('Guest deleted:', payload.old)
+          setGuests(prevGuests => prevGuests.filter(guest => guest.id !== payload.old.id))
+        }
+      )
+      // Event UPDATE events (event details changed)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'events',
+          filter: `id=eq.${params.id}`
+        },
+        (payload) => {
+          console.log('Event updated:', payload.new)
+          setEvent(payload.new as Event)
         }
       )
       .subscribe()
