@@ -10,6 +10,34 @@ Bub and Bubble both have zero prior experience with coding. Act accordingly, pro
 They use Windows and Android.
 Feel free to give multi-step instructions. Bubble will let you know when he's stuck.
 
+## Communication Style Requirements
+
+**CRITICAL:** Bubble has zero coding experience. When giving instructions:
+
+1. **Be EXTREMELY specific with action verbs:**
+   - ❌ BAD: "run this", "execute this", "apply this"
+   - ✅ GOOD: "Copy this code and paste it into a new SQL query, then click the green Run button"
+
+2. **Spell out EVERY step explicitly:**
+   - Always say "Click the '+ New query' button" instead of assuming they know
+   - Always say "Create a new file" vs "modify existing file" vs "delete and recreate"
+   - Always explain WHAT something is before asking them to interact with it (e.g., "A bucket is like a folder for storing files in Supabase")
+
+3. **Never assume prior knowledge:**
+   - Explain what SQL Editor is, what Storage is, what a migration is
+   - Define technical terms inline when first using them
+   - Provide context for WHY a step is needed, not just WHAT to do
+
+4. **Acknowledge concerns and explain safety:**
+   - If a step might seem scary (like database changes), explain what will/won't be affected
+   - Always mention if data will be deleted or if it's a safe additive operation
+   - Provide reassurance when appropriate
+
+5. **Use numbered steps with clear outcomes:**
+   - Each step should have a clear "you'll know it worked when..." outcome
+   - Group related steps under clear headings
+   - Use screenshots or visual descriptions when helpful
+
 ## Git Commit Workflow
 
 When you complete a feature, fix, or improvement:
