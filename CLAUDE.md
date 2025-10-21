@@ -255,9 +255,11 @@ The RSVP system allows guests to confirm attendance before receiving QR codes:
 
 ## Event Branding & Customization
 
+**Key Philosophy**: Branding is **customer-facing** (shown to VIP guests), not organizer-facing.
+
 ### Custom Event Logos
 
-Organizers can upload custom logos for each event:
+Organizers can upload custom logos for their brands (e.g., JBL, Nike) to appear during the VIP guest experience:
 
 1. **Upload**: From event detail page, click "Edit Event" and upload logo
    - Max file size: 2MB
@@ -269,15 +271,26 @@ Organizers can upload custom logos for each event:
    - Public read access, authenticated write/delete
    - Upsert enabled (new uploads replace old ones)
 
-3. **Display**: Logo shown at top of event detail page (max 300x150px display)
+3. **Display Locations**:
+   - Event organizer's detail page (max 300x150px display)
+   - **Scanner result screens** shown to VIP guests (max 250x120px display)
+     - Success screen (when guest claims goodie bag)
+     - Already claimed screen
+     - Invalid QR code screen
 
 ### "Powered by Gifty" Watermark
 
-- Optional watermark displayed as fixed badge in bottom-right corner
+- **IMPORTANT**: Watermark appears **ONLY on scanner screens** shown to VIP guests, NOT on organizer dashboard
+- Appears as subtle badge in bottom-right corner of result screens
 - Enabled by default (`show_powered_by: true`)
-- Organizers can toggle in event edit modal
-- Styled with champagne gold gradient matching brand theme
-- Note: "Can be removed with premium" hint shown in UI (future monetization path)
+- Organizers can toggle off in event edit modal (premium feature path)
+- Simple white text on semi-transparent background (matches any result screen color)
+- Edit modal clarifies: "Display watermark on scanner screens shown to VIP guests (can be removed with premium)"
+
+**Future Enhancement Ideas**:
+- Semi-automatic brand color theming for scanner experience (extract colors from logo)
+- Custom fonts matching brand identity
+- Full white-label option for enterprise clients
 
 ## CSV Import Format
 
