@@ -82,7 +82,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     border: '#2a2a2a',
     richGrey: '#3a3a3a',
     success: '#4a7c59',
-    successBg: '#1a2f1f'
+    successBg: '#1a2f1f',
+    error: '#8b7474'
   }
 
   useEffect(() => {
