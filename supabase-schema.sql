@@ -173,3 +173,13 @@ USING (
 CREATE POLICY "Event logos are publicly readable"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'event-logos');
+
+-- ============================================
+-- REAL-TIME SETUP
+-- ============================================
+
+-- Enable real-time for guests table (for live updates during events)
+ALTER PUBLICATION supabase_realtime ADD TABLE guests;
+
+-- Enable real-time for events table (for live event detail updates)
+ALTER PUBLICATION supabase_realtime ADD TABLE events;

@@ -120,9 +120,14 @@ export default function DashboardPage() {
         const diffA = dateA.getTime() - today.getTime()
         const diffB = dateB.getTime() - today.getTime()
 
-        // Both future or both past: sort by date
-        if ((diffA >= 0 && diffB >= 0) || (diffA < 0 && diffB < 0)) {
+        // Both future: sort soonest first (ascending)
+        if (diffA >= 0 && diffB >= 0) {
           return diffA - diffB
+        }
+
+        // Both past: sort most recent first (descending)
+        if (diffA < 0 && diffB < 0) {
+          return diffB - diffA
         }
 
         // One future, one past: future comes first
