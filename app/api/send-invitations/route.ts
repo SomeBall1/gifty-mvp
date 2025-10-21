@@ -59,9 +59,15 @@ export async function POST(request: Request) {
       )
     }
 
-    let sentCount = 0
-    let failedCount = 0
-    const errors: string[] = []
+    interface EmailResult {
+      guestId: string
+      guestName: string
+      guestEmail: string
+      success: boolean
+      error?: string
+    }
+
+    const results: EmailResult[] = []
 
     // Send email to each guest
     for (const guest of guests) {
@@ -90,11 +96,11 @@ export async function POST(request: Request) {
           tier: guest.tier
         })
 
-// Send email via Resend (only if configured)
+        // Send email via Resend (only if configured)
         if (!resend) {
           throw new Error('Resend API key not configured')
         }
-        
+
         const { error: sendError } = await resend.emails.send({
           from: fromEmail,
           to: guest.email,
@@ -103,23 +109,47 @@ export async function POST(request: Request) {
         })
 
         if (sendError) {
-          failedCount++
-          errors.push(`${guest.name} (${guest.email}): ${sendError.message}`)
+          results.push({
+            guestId: guest.id,
+            guestName: guest.name,
+            guestEmail: guest.email,
+            success: false,
+            error: sendError.message
+          })
         } else {
-          sentCount++
+          // Update guest record with invitation sent timestamp
+          await supabase
+            .from('guests')
+            .update({ qr_invitation_sent_at: new Date().toISOString() })
+            .eq('id', guest.id)
+
+          results.push({
+            guestId: guest.id,
+            guestName: guest.name,
+            guestEmail: guest.email,
+            success: true
+          })
         }
       } catch (error: any) {
-        failedCount++
-        errors.push(`${guest.name} (${guest.email}): ${error.message}`)
+        results.push({
+          guestId: guest.id,
+          guestName: guest.name,
+          guestEmail: guest.email,
+          success: false,
+          error: error.message
+        })
       }
     }
+
+    const sentCount = results.filter(r => r.success).length
+    const failedCount = results.filter(r => !r.success).length
 
     return NextResponse.json({
       success: true,
       sent: sentCount,
       failed: failedCount,
       total: guests.length,
-      errors: errors.length > 0 ? errors : undefined
+      results
     })
   } catch (error: any) {
     console.error('Error in send-invitations API:', error)

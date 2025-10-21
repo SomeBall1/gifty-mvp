@@ -33,6 +33,8 @@ CREATE TABLE guests (
   claimed_at TIMESTAMPTZ,
   rsvp_status TEXT NOT NULL DEFAULT 'Pending',
   rsvp_responded_at TIMESTAMPTZ,
+  rsvp_invitation_sent_at TIMESTAMPTZ,
+  qr_invitation_sent_at TIMESTAMPTZ,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -7,6 +7,7 @@ import Papa from 'papaparse'
 import QRCode from 'qrcode'
 import Link from 'next/link'
 import { ArrowLeft, Upload, Download, CheckCircle, Circle, Crown, Clock, MapPin, StickyNote, X, Edit2, UserPlus } from 'lucide-react'
+import EmailInvitationModal from '@/components/EmailInvitationModal'
 
 interface Guest {
   id: string
@@ -17,6 +18,8 @@ interface Guest {
   claimed_at: string | null
   rsvp_status: string
   rsvp_responded_at: string | null
+  rsvp_invitation_sent_at: string | null
+  qr_invitation_sent_at: string | null
   notes: string | null
 }
 
@@ -36,15 +39,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [sendingEmails, setSendingEmails] = useState(false)
   const [downloadingQR, setDownloadingQR] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [uploadMessage, setUploadMessage] = useState('')
-  const [emailMessage, setEmailMessage] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'claimed' | 'not-claimed'>('all')
   const [filterRSVP, setFilterRSVP] = useState<'all' | 'pending' | 'confirmed' | 'declined'>('all')
-  const [sendingRSVPEmails, setSendingRSVPEmails] = useState(false)
-  const [rsvpEmailMessage, setRSVPEmailMessage] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
   const [isEditingEvent, setIsEditingEvent] = useState(false)
@@ -66,6 +65,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [addingGuest, setAddingGuest] = useState(false)
   const [addGuestMessage, setAddGuestMessage] = useState('')
   const [newGuestQR, setNewGuestQR] = useState<{ guestId: string; name: string; tier: string; qrDataUrl: string } | null>(null)
+  const [showRSVPModal, setShowRSVPModal] = useState(false)
+  const [showQRModal, setShowQRModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -298,40 +299,17 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     setNoteText('')
   }
 
-  const sendRSVPInvitations = async () => {
-    setSendingRSVPEmails(true)
-    setRSVPEmailMessage('')
+  const handleOpenRSVPModal = () => {
+    setShowRSVPModal(true)
+  }
 
-    try {
-      const response = await fetch('/api/send-rsvp-invitations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventId: params.id,
-          fromEmail: process.env.NEXT_PUBLIC_RESEND_FROM_EMAIL || 'onboarding@resend.dev'
-        })
-      })
+  const handleOpenQRModal = () => {
+    setShowQRModal(true)
+  }
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        setRSVPEmailMessage(`Error: ${data.error}`)
-        setSendingRSVPEmails(false)
-        return
-      }
-
-      setRSVPEmailMessage(
-        `Successfully sent ${data.sent} RSVP invitation${data.sent !== 1 ? 's' : ''}!` +
-        (data.failed > 0 ? ` (${data.failed} failed)` : '')
-      )
-      setTimeout(() => setRSVPEmailMessage(''), 5000)
-    } catch (error: any) {
-      setRSVPEmailMessage(`Error: ${error.message}`)
-    } finally {
-      setSendingRSVPEmails(false)
-    }
+  const handleModalSendComplete = () => {
+    // Refresh guest list to update invitation sent timestamps
+    fetchGuests()
   }
 
   const handleEditEvent = () => {
@@ -1065,8 +1043,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             {/* Send RSVP Invitations Button */}
             {rsvpPendingCount > 0 && (
               <button
-                onClick={sendRSVPInvitations}
-                disabled={sendingRSVPEmails}
+                onClick={handleOpenRSVPModal}
                 style={{
                   background: colors.gold,
                   border: 'none',
@@ -1075,8 +1052,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                   borderRadius: '10px',
                   fontSize: '15px',
                   fontWeight: '600',
-                  cursor: sendingRSVPEmails ? 'not-allowed' : 'pointer',
-                  opacity: sendingRSVPEmails ? 0.6 : 1,
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -1084,35 +1060,50 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                   transform: 'translateY(0)'
                 }}
                 onMouseEnter={(e) => {
-                  if (!sendingRSVPEmails) {
-                    e.currentTarget.style.background = colors.goldLight
-                    e.currentTarget.style.transform = 'translateY(-1px)'
-                  }
+                  e.currentTarget.style.background = colors.goldLight
+                  e.currentTarget.style.transform = 'translateY(-1px)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = colors.gold
                   e.currentTarget.style.transform = 'translateY(0)'
                 }}
               >
-                📧 {sendingRSVPEmails ? 'Sending...' : `Send RSVP Invites (${rsvpPendingCount})`}
+                📧 Send RSVP Invites ({rsvpPendingCount})
+              </button>
+            )}
+
+            {/* Send QR Code Invitations Button */}
+            {guests.filter(g => g.status === 'Not Claimed').length > 0 && (
+              <button
+                onClick={handleOpenQRModal}
+                style={{
+                  background: colors.gold,
+                  border: 'none',
+                  color: colors.bg,
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s ease',
+                  transform: 'translateY(0)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.goldLight
+                  e.currentTarget.style.transform = 'translateY(-1px)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.gold
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                📧 Send QR Code Invites ({guests.filter(g => g.status === 'Not Claimed').length})
               </button>
             )}
           </div>
-
-          {rsvpEmailMessage && (
-            <div style={{
-              marginTop: '16px',
-              padding: '12px 16px',
-              borderRadius: '8px',
-              background: rsvpEmailMessage.includes('Error') ? `${colors.error}20` : colors.successBg,
-              border: `1px solid ${rsvpEmailMessage.includes('Error') ? colors.error : colors.success}`,
-              color: rsvpEmailMessage.includes('Error') ? colors.error : colors.success,
-              fontSize: '14px',
-              fontWeight: '500'
-            }}>
-              {rsvpEmailMessage}
-            </div>
-          )}
 
           {uploadMessage && (
             <div style={{
@@ -2488,6 +2479,47 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Email Invitation Modals */}
+      {event && (
+        <>
+          <EmailInvitationModal
+            isOpen={showRSVPModal}
+            onClose={() => setShowRSVPModal(false)}
+            eventId={params.id}
+            eventName={event.name}
+            eventDate={new Date(event.date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+            eventLocation={event.location}
+            recipients={guests.filter(g => g.rsvp_status === 'Pending')}
+            invitationType="rsvp"
+            fromEmail={process.env.NEXT_PUBLIC_RESEND_FROM_EMAIL || 'onboarding@resend.dev'}
+            onSendComplete={handleModalSendComplete}
+          />
+
+          <EmailInvitationModal
+            isOpen={showQRModal}
+            onClose={() => setShowQRModal(false)}
+            eventId={params.id}
+            eventName={event.name}
+            eventDate={new Date(event.date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+            eventLocation={event.location}
+            recipients={guests.filter(g => g.status === 'Not Claimed')}
+            invitationType="qr"
+            fromEmail={process.env.NEXT_PUBLIC_RESEND_FROM_EMAIL || 'onboarding@resend.dev'}
+            onSendComplete={handleModalSendComplete}
+          />
+        </>
       )}
     </div>
   )
