@@ -559,7 +559,7 @@ export default function EmailInvitationModal({
                 disabled={selectedRecipients.size === 0}
                 style={{
                   flex: 1,
-                  background: selectedRecipients.size === 0 ? colors.border : `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100())`,
+                  background: selectedRecipients.size === 0 ? colors.border : `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
                   border: 'none',
                   color: selectedRecipients.size === 0 ? colors.textMuted : colors.bg,
                   padding: '14px 24px',
