@@ -354,8 +354,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   }
 
   const handleQuickAddGuest = async () => {
-    if (!addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) {
-      setAddGuestMessage('Please fill in all fields')
+    if (!addGuestForm.name) {
+      setAddGuestMessage('Name is required')
       return
     }
 
@@ -369,8 +369,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         .insert({
           event_id: params.id,
           name: addGuestForm.name.trim(),
-          email: addGuestForm.email.trim(),
-          tier: addGuestForm.tier.trim(),
+          email: addGuestForm.email.trim() || '',
+          tier: addGuestForm.tier.trim() || 'Guest',
           status: 'Not Claimed'
         })
         .select()
@@ -406,19 +406,28 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const handleWhatsAppShare = () => {
     if (!newGuestQR) return
 
-    // Create WhatsApp message with guest details
+    // Create WhatsApp message with instructions to download QR
     const message = encodeURIComponent(
       `🎁 GIFTY Event Invitation\n\n` +
       `Event: ${event?.name}\n` +
       `Guest: ${newGuestQR.name}\n` +
       `Tier: ${newGuestQR.tier}\n\n` +
-      `Please show this QR code at the event to claim your goodie bag!\n\n` +
-      `QR Code: ${newGuestQR.qrDataUrl}`
+      `You've been added to the VIP guest list! 🎉\n\n` +
+      `To get your QR code:\n` +
+      `1. Download the QR code image I'm sending\n` +
+      `2. Show it on your phone at the event entrance\n` +
+      `3. Get your goodie bag scanned!\n\n` +
+      `See you at the event! ✨`
     )
 
-    // Open WhatsApp with pre-filled message
-    // On mobile, this opens WhatsApp app; on desktop, WhatsApp Web
+    // Open WhatsApp with message, user can then attach the QR image manually
+    // Or download QR first, then share via WhatsApp's image sharing
     window.open(`https://wa.me/?text=${message}`, '_blank')
+
+    // Also trigger download so they have the QR ready to attach
+    setTimeout(() => {
+      handleDownloadNewQR()
+    }, 500)
   }
 
   const handleDownloadNewQR = () => {
@@ -1483,16 +1492,16 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                     display: 'block',
                     fontSize: '14px',
                     fontWeight: '600',
-                    color: colors.text,
+                    color: colors.textMuted,
                     marginBottom: '8px'
                   }}>
-                    Email *
+                    Email <span style={{ fontSize: '12px', color: colors.textMuted }}>(optional)</span>
                   </label>
                   <input
                     type="email"
                     value={addGuestForm.email}
                     onChange={(e) => setAddGuestForm({ ...addGuestForm, email: e.target.value })}
-                    placeholder="e.g., sarah@example.com"
+                    placeholder="e.g., sarah@example.com (optional)"
                     style={{
                       width: '100%',
                       padding: '12px 16px',
@@ -1511,16 +1520,16 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                     display: 'block',
                     fontSize: '14px',
                     fontWeight: '600',
-                    color: colors.text,
+                    color: colors.textMuted,
                     marginBottom: '8px'
                   }}>
-                    Tier *
+                    Tier <span style={{ fontSize: '12px', color: colors.textMuted }}>(optional - defaults to "Guest")</span>
                   </label>
                   <input
                     type="text"
                     value={addGuestForm.tier}
                     onChange={(e) => setAddGuestForm({ ...addGuestForm, tier: e.target.value })}
-                    placeholder="e.g., VIP, Press, Standard"
+                    placeholder="e.g., VIP, Press, Standard (optional)"
                     style={{
                       width: '100%',
                       padding: '12px 16px',
@@ -1549,7 +1558,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
                 <button
                   onClick={handleQuickAddGuest}
-                  disabled={addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier}
+                  disabled={addingGuest || !addGuestForm.name}
                   style={{
                     background: `linear-gradient(135deg, ${colors.gold} 0%, ${colors.goldLight} 100%)`,
                     border: 'none',
@@ -1558,12 +1567,12 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                     borderRadius: '10px',
                     fontSize: '16px',
                     fontWeight: '700',
-                    cursor: (addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) ? 'not-allowed' : 'pointer',
-                    opacity: (addingGuest || !addGuestForm.name || !addGuestForm.email || !addGuestForm.tier) ? 0.5 : 1,
+                    cursor: (addingGuest || !addGuestForm.name) ? 'not-allowed' : 'pointer',
+                    opacity: (addingGuest || !addGuestForm.name) ? 0.5 : 1,
                     transition: 'all 0.2s ease'
                   }}
                   onMouseEnter={(e) => {
-                    if (!addingGuest && addGuestForm.name && addGuestForm.email && addGuestForm.tier) {
+                    if (!addingGuest && addGuestForm.name) {
                       e.currentTarget.style.transform = 'translateY(-1px)'
                     }
                   }}
