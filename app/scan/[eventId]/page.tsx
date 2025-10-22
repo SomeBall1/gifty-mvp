@@ -297,9 +297,23 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         minHeight: '100vh',
         background: colors.bg,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        gap: '24px'
       }}>
+        {eventLogo && (
+          <img
+            src={eventLogo}
+            alt="Event Logo"
+            style={{
+              maxWidth: '250px',
+              maxHeight: '150px',
+              objectFit: 'contain',
+              opacity: 0.85
+            }}
+          />
+        )}
         <div style={{ color: colors.text, fontSize: '20px' }}>Loading...</div>
       </div>
     )
@@ -315,8 +329,21 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '32px'
+        padding: '32px',
+        gap: '24px'
       }}>
+        {eventLogo && (
+          <img
+            src={eventLogo}
+            alt="Event Logo"
+            style={{
+              maxWidth: '250px',
+              maxHeight: '150px',
+              objectFit: 'contain',
+              opacity: 0.85
+            }}
+          />
+        )}
         <div style={{
           background: colors.cardBg,
           borderRadius: '16px',
@@ -430,8 +457,9 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
               alt="Event Logo"
               style={{
                 maxWidth: '250px',
-                maxHeight: '120px',
-                objectFit: 'contain'
+                maxHeight: '150px',
+                objectFit: 'contain',
+                opacity: 0.85
               }}
             />
           </div>
@@ -516,8 +544,9 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
               alt="Event Logo"
               style={{
                 maxWidth: '250px',
-                maxHeight: '120px',
-                objectFit: 'contain'
+                maxHeight: '150px',
+                objectFit: 'contain',
+                opacity: 0.85
               }}
             />
           </div>
@@ -602,8 +631,9 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
               alt="Event Logo"
               style={{
                 maxWidth: '250px',
-                maxHeight: '120px',
-                objectFit: 'contain'
+                maxHeight: '150px',
+                objectFit: 'contain',
+                opacity: 0.85
               }}
             />
           </div>
@@ -705,6 +735,19 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
           padding: '24px',
           textAlign: 'center'
         }}>
+          {eventLogo && (
+            <img
+              src={eventLogo}
+              alt="Event Logo"
+              style={{
+                maxWidth: '250px',
+                maxHeight: '150px',
+                objectFit: 'contain',
+                opacity: 0.85,
+                marginBottom: '32px'
+              }}
+            />
+          )}
           <Camera size={64} color={colors.textMuted} style={{ marginBottom: '24px' }} />
           <h3 style={{ fontSize: '20px', color: colors.text, marginBottom: '12px' }}>
             Camera Access Needed
@@ -791,6 +834,19 @@ export default function ScannerPage({ params }: { params: { eventId: string } })
       }}>
         {!scanning ? (
           <div style={{ textAlign: 'center' }}>
+            {eventLogo && (
+              <img
+                src={eventLogo}
+                alt="Event Logo"
+                style={{
+                  maxWidth: '250px',
+                  maxHeight: '150px',
+                  objectFit: 'contain',
+                  opacity: 0.85,
+                  marginBottom: '32px'
+                }}
+              />
+            )}
             <Camera size={64} color={colors.gold} style={{ marginBottom: '24px' }} />
             <h3 style={{
               fontSize: '20px',
