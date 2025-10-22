@@ -87,8 +87,10 @@ export async function POST(request: Request) {
 
     const results: EmailResult[] = []
 
-    // Send email to each guest
-    for (const guest of guests) {
+    // Send email to each guest with delay between sends
+    for (let i = 0; i < guests.length; i++) {
+      const guest = guests[i]
+
       try {
         // Generate QR code as data URL
         const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${eventId}?guest_id=${guest.id}`
@@ -152,6 +154,11 @@ export async function POST(request: Request) {
           success: false,
           error: error.message
         })
+      }
+
+      // Add 750ms delay between sends (except after last email)
+      if (i < guests.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 750))
       }
     }
 
